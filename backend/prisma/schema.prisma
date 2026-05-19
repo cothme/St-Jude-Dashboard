@@ -1,0 +1,202 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  STAFF
+  DOCTOR
+}
+
+enum RecordStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum PatientStatus {
+  ADMITTED
+  STABLE
+  OBSERVATION
+  DISCHARGED
+}
+
+enum Sex {
+  MALE
+  FEMALE
+}
+
+enum CivilStatus {
+  SINGLE
+  MARRIED
+  WIDOWED
+  DIVORCED
+}
+
+enum FormStatus {
+  DRAFT
+  SUBMITTED
+  REVIEWED
+}
+
+model User {
+  id              String    @id
+  name            String
+  email           String    @unique
+  emailVerified   Boolean   @default(false)
+  image           String?
+  role            Role      @default(STAFF)
+  linkedEmployeeId Int?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  sessions        Session[]
+  accounts        Account[]
+  linkedEmployee  Employee? @relation(fields: [linkedEmployeeId], references: [id])
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Verification {
+  id         String    @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime? @default(now())
+  updatedAt  DateTime? @updatedAt
+}
+
+model Employee {
+  id              Int             @id @default(autoincrement())
+  employeeCode    String          @unique
+  firstName       String
+  lastName        String
+  position        String
+  department      String
+  email           String?
+  phone           String?
+  hireDate        DateTime
+  baseSalary      Decimal         @db.Decimal(12, 2)
+  workDaysPerWeek Int             @default(6)
+  status          RecordStatus    @default(ACTIVE)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  users           User[]
+  attendingPatients Patient[]     @relation("AttendingDoctor")
+  checkups        CheckupRecord[] @relation("CheckupDoctor")
+  payrollRecords  PayrollRecord[]
+}
+
+model Patient {
+  id                     Int            @id @default(autoincrement())
+  firstName              String
+  lastName               String
+  dateOfBirth            DateTime
+  sex                    Sex
+  civilStatus            CivilStatus
+  nationality            String
+  address                String
+  contactNumber          String?
+  emergencyContactName   String?
+  emergencyContactNumber String?
+  attendingDoctorId      Int?
+  status                 PatientStatus  @default(ADMITTED)
+  ward                   String
+  admissionDate          DateTime
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
+
+  attendingDoctor        Employee?      @relation("AttendingDoctor", fields: [attendingDoctorId], references: [id])
+  checkups               CheckupRecord[]
+}
+
+model CheckupRecord {
+  id               Int       @id @default(autoincrement())
+  patientId        Int
+  doctorId         Int
+  checkupDate      DateTime
+  chiefComplaint   String?
+  symptoms         String?
+  diagnosis        String?
+  prescriptions    String?
+  bloodPressure    String?
+  temperature      Decimal?  @db.Decimal(5, 2)
+  heartRate        Int?
+  weight           Decimal?  @db.Decimal(6, 2)
+  height           Decimal?  @db.Decimal(6, 2)
+  bmi              Decimal?  @db.Decimal(5, 2)
+  notes            String?
+  nextAppointment  DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  patient          Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctor           Employee  @relation("CheckupDoctor", fields: [doctorId], references: [id])
+}
+
+model PayrollRecord {
+  id              Int      @id @default(autoincrement())
+  employeeId      Int
+  payPeriodStart  DateTime
+  payPeriodEnd    DateTime
+  daysWorked      Int
+  overtimeHours   Decimal  @db.Decimal(8, 2)
+  grossPay        Decimal  @db.Decimal(12, 2)
+  sss             Decimal  @db.Decimal(12, 2) @default(0)
+  philhealth      Decimal  @db.Decimal(12, 2) @default(0)
+  pagibig         Decimal  @db.Decimal(12, 2) @default(0)
+  tax             Decimal  @db.Decimal(12, 2) @default(0)
+  otherDeductions Decimal  @db.Decimal(12, 2) @default(0)
+  totalDeductions Decimal  @db.Decimal(12, 2)
+  netPay          Decimal  @db.Decimal(12, 2)
+  note            String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  employee        Employee @relation(fields: [employeeId], references: [id])
+}
+
+model FormSubmission {
+  id          Int        @id @default(autoincrement())
+  templateId  String
+  title       String
+  category    String
+  submittedBy String
+  submittedAt DateTime   @default(now())
+  status      FormStatus  @default(SUBMITTED)
+  fields      Json
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
