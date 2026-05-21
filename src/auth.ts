@@ -1,7 +1,7 @@
 import { Role } from "./types";
 
 export const rolePermissions: Record<Role, string[]> = {
-  "Super admin": ["dashboard", "patients", "checkups", "forms", "employees", "payroll", "users"],
+  "Super admin": ["dashboard", "patients", "checkups", "forms", "employees", "payroll", "users", "activityLogs"],
   Staff: ["dashboard", "patients", "checkups", "forms", "employees"],
   Doctor: ["dashboard", "patients", "checkups", "forms"],
 };

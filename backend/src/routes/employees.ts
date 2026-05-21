@@ -9,6 +9,7 @@ const employeeSchema = z.object({
   employeeCode: z.string().min(1),
   firstName: z.string().min(1),
   lastName: z.string().min(1),
+  profileImageUrl: z.string().optional().nullable(),
   position: z.string().min(1),
   department: z.string().min(1),
   email: z.string().email().optional().nullable(),

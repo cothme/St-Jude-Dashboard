@@ -4,7 +4,7 @@ import { z } from "zod";
 import { prisma } from "../db.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { calculatePayroll } from "../utils/payroll.js";
-import { renderPayslip } from "../utils/payslip.js";
+import { renderBulkPayslips, renderPayslip } from "../utils/payslip.js";
 
 const router = Router();
 const payrollSchema = z.object({
@@ -59,14 +59,30 @@ router.post("/bulk", async (req, res) => {
   res.status(201).json({ data: records });
 });
 
+router.post("/payslips/bulk", async (req, res) => {
+  const input = z.object({ ids: z.array(z.number()).min(1) }).parse(req.body);
+  const records = await prisma.payrollRecord.findMany({
+    where: { id: { in: input.ids } },
+    include: { employee: true },
+    orderBy: { payPeriodEnd: "desc" },
+  });
+  const pdf = await renderBulkPayslips(records);
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename="payslips-bulk-${new Date().toISOString().slice(0, 10)}.pdf"`);
+  res.setHeader("Content-Length", pdf.length);
+  res.send(pdf);
+});
+
 router.get("/:id/payslip", async (req, res) => {
   const record = await prisma.payrollRecord.findUniqueOrThrow({
     where: { id: Number(req.params.id) },
     include: { employee: true },
   });
-  res.setHeader("Content-Type", "text/html; charset=utf-8");
-  res.setHeader("Content-Disposition", `attachment; filename="payslip-${record.employee.employeeCode}-${record.id}.html"`);
-  res.send(renderPayslip(record, record.employee));
+  const pdf = await renderPayslip(record);
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename="payslip-${record.employee.employeeCode}-${record.id}.pdf"`);
+  res.setHeader("Content-Length", pdf.length);
+  res.send(pdf);
 });
 
 router.delete("/:id", async (req, res) => {

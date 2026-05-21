@@ -1,7 +1,22 @@
 import { PrismaClient, Role } from "@prisma/client";
-import { randomUUID } from "node:crypto";
+import { auth } from "../src/auth.js";
 
 const prisma = new PrismaClient();
+
+async function createDemoUser(name: string, email: string, role: Role, linkedEmployeeId?: number) {
+  await prisma.user.deleteMany({ where: { email } });
+  await auth.api.signUpEmail({
+    body: {
+      name,
+      email,
+      password: "Password123!",
+    },
+  });
+  await prisma.user.update({
+    where: { email },
+    data: { role, linkedEmployeeId, emailVerified: true },
+  });
+}
 
 async function main() {
   const doctor = await prisma.employee.upsert({
@@ -38,17 +53,26 @@ async function main() {
     },
   });
 
-  await prisma.user.upsert({
-    where: { email: "admin@stjude.local" },
-    update: { role: Role.SUPER_ADMIN },
+  const staff = await prisma.employee.upsert({
+    where: { employeeCode: "SJ-003" },
+    update: {},
     create: {
-      id: randomUUID(),
-      name: "Maria Santos",
-      email: "admin@stjude.local",
-      emailVerified: true,
-      role: Role.SUPER_ADMIN,
+      employeeCode: "SJ-003",
+      firstName: "Ana",
+      lastName: "Reyes",
+      position: "Care Staff",
+      department: "Administration",
+      email: "areyes@stjude.local",
+      phone: "0917 222 0103",
+      hireDate: new Date("2023-04-03"),
+      baseSalary: 28000,
+      workDaysPerWeek: 6,
     },
   });
+
+  await createDemoUser("Maria Santos", "admin@stjude.local", Role.SUPER_ADMIN);
+  await createDemoUser("Ana Reyes", "staff@stjude.local", Role.STAFF, staff.id);
+  await createDemoUser("Dr. Miguel Cruz", "doctor@stjude.local", Role.DOCTOR, doctor.id);
 
   await prisma.patient.upsert({
     where: { id: 1 },

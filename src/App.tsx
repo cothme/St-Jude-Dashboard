@@ -10,24 +10,32 @@ import {
   Moon,
   Search,
   Shield,
-  Stethoscope,
   Sun,
   Users,
   UserRoundCog,
   X,
 } from "lucide-react";
-import { createContext, FormEvent, ReactNode, useContext, useEffect, useMemo, useState } from "react";
-import { Link, Navigate, NavLink, Outlet, Route, Routes, useNavigate } from "react-router-dom";
+import { createContext, FormEvent, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { Link, Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { canAccess } from "./auth";
 import { initialData } from "./data/mockData";
+import { backendApi, backendAuth } from "./services/apiClient";
 import { authService, employeeService, patientService } from "./services/mockServices";
-import { AppData, CareFormSubmission, CheckupRecord, Employee, FormCategory, Patient, PayrollRecord, Role, User } from "./types";
+import { ActivityLog, AppData, CareFormSubmission, CheckupRecord, Employee, FormCategory, Patient, PayrollRecord, Role, User } from "./types";
 import { ageFromBirthDate, calculateBmi, formatCurrency, formatDate, nextId } from "./utils";
+import stJudeLogo from "./assets/stjude-logo.png";
 
 interface AppContextValue {
   data: AppData;
   currentUser: User;
+  isAuthenticated: boolean;
+  authLoading: boolean;
   theme: "light" | "dark";
+  refreshData: () => Promise<void>;
+  signIn: (email: string, password: string) => Promise<void>;
+  signOut: () => Promise<void>;
+  showToast: (message: string, type?: "success" | "error" | "info") => void;
+  logActivity: (activity: Omit<ActivityLog, "id" | "actorId" | "actorName" | "actorRole" | "timestamp">) => void;
   toggleTheme: () => void;
   setRole: (role: Role) => void;
   addPatient: (patient: Omit<Patient, "id">) => void;
@@ -43,7 +51,7 @@ interface AppContextValue {
   addFormSubmission: (form: Omit<CareFormSubmission, "id" | "submittedAt" | "submittedBy">) => void;
   addUser: (user: Omit<User, "id">) => void;
   updateUser: (user: User) => void;
-  deleteUser: (id: number) => void;
+  deleteUser: (id: number | string) => void;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -54,23 +62,164 @@ const useApp = () => {
 };
 
 function AppProvider({ children }: { children: ReactNode }) {
-  const [data, setData] = useState<AppData>(initialData);
-  const [currentUserId, setCurrentUserId] = useState(1);
+  const [data, setData] = useState<AppData>(() => ({
+    ...initialData,
+    activityLogs: loadStoredActivityLogs(initialData.activityLogs),
+  }));
+  const [currentUserId, setCurrentUserId] = useState<number | string>(1);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [toasts, setToasts] = useState<Array<{ id: number; message: string; type: "success" | "error" | "info" }>>([]);
   const [theme, setTheme] = useState<"light" | "dark">(() => {
     const stored = localStorage.getItem("stjude-theme");
     return stored === "dark" ? "dark" : "light";
   });
   const currentUser = data.users.find((user) => user.id === currentUserId) ?? data.users[0];
 
+  const logActivity = useCallback((activity: Omit<ActivityLog, "id" | "actorId" | "actorName" | "actorRole" | "timestamp">) => {
+    setData((current) => {
+      const actor = current.users.find((user) => user.id === currentUserId) ?? current.users[0];
+      const log: ActivityLog = {
+        ...activity,
+        id: nextId(current.activityLogs),
+        actorId: actor.id,
+        actorName: actor.name,
+        actorRole: actor.role,
+        timestamp: new Date().toISOString(),
+      };
+      return { ...current, activityLogs: [log, ...current.activityLogs].slice(0, 250) };
+    });
+  }, [currentUserId]);
+
+  const showToast = useCallback((message: string, type: "success" | "error" | "info" = "info") => {
+    const id = Date.now() + Math.random();
+    setToasts((current) => [...current, { id, message, type }]);
+    window.setTimeout(() => {
+      setToasts((current) => current.filter((toast) => toast.id !== id));
+    }, 3200);
+  }, []);
+
+  const refreshData = async () => {
+    const loaded = await backendApi.loadAppData();
+    setData((current) => ({
+      ...current,
+      ...loaded,
+      users: loaded.users && loaded.users.length > 0 ? loaded.users : current.users,
+    }));
+  };
+
+  const signIn = async (email: string, password: string) => {
+    await backendAuth.signIn(email, password);
+    const session = await backendAuth.getSession();
+    if (session?.user) {
+      const signedInUser: User = {
+        id: session.user.id,
+        name: session.user.name,
+        email: session.user.email,
+        role: sessionRoleToUi(session.user.role),
+        status: "Active",
+        linkedEmployeeId: session.user.linkedEmployeeId ?? undefined,
+        profileImageUrl: session.user.image ?? undefined,
+      };
+      setData((current) => ({
+        ...current,
+        users: current.users.some((user) => user.id === signedInUser.id)
+          ? current.users.map((user) => user.id === signedInUser.id ? signedInUser : user)
+          : [signedInUser, ...current.users],
+      }));
+      setCurrentUserId(signedInUser.id);
+      setIsAuthenticated(true);
+      setData((current) => ({
+        ...current,
+        activityLogs: [{
+          id: nextId(current.activityLogs),
+          actorId: signedInUser.id,
+          actorName: signedInUser.name,
+          actorRole: signedInUser.role,
+          action: "Signed in",
+          entity: "Session",
+          summary: `${signedInUser.name} signed in as ${signedInUser.role}.`,
+          timestamp: new Date().toISOString(),
+          severity: "info",
+        } satisfies ActivityLog, ...current.activityLogs].slice(0, 250),
+      }));
+      showToast(`Welcome back, ${signedInUser.name}`, "success");
+    }
+    await refreshData();
+  };
+
+  const signOut = async () => {
+    logActivity({ action: "Signed out", entity: "Session", summary: `${currentUser.name} signed out.`, severity: "info" });
+    await backendAuth.signOut().catch(() => undefined);
+    setIsAuthenticated(false);
+    setCurrentUserId(1);
+    showToast("Logged out", "info");
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    const checkSession = async () => {
+      try {
+        const session = await Promise.race([
+          backendAuth.getSession(),
+          new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 2500)),
+        ]);
+
+        if (cancelled) return;
+
+        if (!session?.user) {
+          setIsAuthenticated(false);
+          return;
+        }
+
+        const sessionUser = session.user as { id: string; name: string; email: string; role?: string; linkedEmployeeId?: number };
+          const signedInUser: User = {
+            id: sessionUser.id,
+            name: sessionUser.name,
+            email: sessionUser.email,
+            role: sessionRoleToUi(sessionUser.role),
+            status: "Active",
+            linkedEmployeeId: sessionUser.linkedEmployeeId ?? undefined,
+            profileImageUrl: (sessionUser as { image?: string }).image ?? undefined,
+          };
+          setData((current) => ({ ...current, users: [signedInUser, ...current.users.filter((user) => user.id !== signedInUser.id)] }));
+          setCurrentUserId(signedInUser.id);
+          setIsAuthenticated(true);
+          refreshData().catch((error) => console.error("Failed to refresh app data", error));
+      } catch {
+        if (!cancelled) setIsAuthenticated(false);
+      } finally {
+        if (!cancelled) setAuthLoading(false);
+      }
+    };
+
+    checkSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem("stjude-theme", theme);
   }, [theme]);
 
+  useEffect(() => {
+    localStorage.setItem("stjude-activity-logs", JSON.stringify(data.activityLogs.slice(0, 250)));
+  }, [data.activityLogs]);
+
   const value = useMemo<AppContextValue>(() => ({
     data,
     currentUser,
+    isAuthenticated,
+    authLoading,
     theme,
+    refreshData,
+    signIn,
+    signOut,
+    showToast,
+    logActivity,
     toggleTheme: () => setTheme((current) => current === "light" ? "dark" : "light"),
     setRole: (role) => {
       const user = data.users.find((item) => item.role === role && item.status === "Active");
@@ -87,12 +236,39 @@ function AppProvider({ children }: { children: ReactNode }) {
     deleteEmployee: (id) => setData((prev) => ({ ...prev, employees: prev.employees.filter((item) => item.id !== id) })),
     addPayroll: (record) => setData((prev) => ({ ...prev, payrollRecords: [{ ...record, id: nextId(prev.payrollRecords) }, ...prev.payrollRecords] })),
     addFormSubmission: (form) => setData((prev) => ({ ...prev, forms: [{ ...form, id: nextId(prev.forms), submittedAt: new Date().toISOString(), submittedBy: currentUser.name }, ...prev.forms] })),
-    addUser: (user) => setData((prev) => ({ ...prev, users: [...prev.users, { ...user, id: nextId(prev.users) }] })),
+    addUser: (user) => setData((prev) => ({ ...prev, users: [...prev.users, { ...user, id: `local-${Date.now()}` }] })),
     updateUser: (user) => setData((prev) => ({ ...prev, users: prev.users.map((item) => item.id === user.id ? user : item) })),
     deleteUser: (id) => setData((prev) => ({ ...prev, users: prev.users.filter((item) => item.id !== id) })),
-  }), [data, currentUser, theme]);
+  }), [data, currentUser, theme, isAuthenticated, authLoading, showToast, logActivity]);
 
-  return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
+  return <AppContext.Provider value={value}>{children}<ToastViewport toasts={toasts} onDismiss={(id) => setToasts((current) => current.filter((toast) => toast.id !== id))} /></AppContext.Provider>;
+}
+
+function ToastViewport({ toasts, onDismiss }: { toasts: Array<{ id: number; message: string; type: "success" | "error" | "info" }>; onDismiss: (id: number) => void }) {
+  return (
+    <div className="toast-viewport" aria-live="polite" aria-atomic="true">
+      {toasts.map((toast) => (
+        <button key={toast.id} className={`toast toast-${toast.type}`} onClick={() => onDismiss(toast.id)}>
+          {toast.message}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function sessionRoleToUi(role: string | undefined): Role {
+  if (role === "SUPER_ADMIN") return "Super admin";
+  if (role === "DOCTOR") return "Doctor";
+  return "Staff";
+}
+
+function loadStoredActivityLogs(fallback: ActivityLog[]) {
+  try {
+    const parsed = JSON.parse(localStorage.getItem("stjude-activity-logs") ?? "[]") as ActivityLog[];
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 const navItems = [
@@ -103,6 +279,7 @@ const navItems = [
   { to: "/employees", label: "Employees", permission: "employees", icon: UserRoundCog },
   { to: "/payroll", label: "Payroll", permission: "payroll", icon: Banknote },
   { to: "/users", label: "Users & Roles", permission: "users", icon: Shield },
+  { to: "/activity-logs", label: "Activity Logs", permission: "activityLogs", icon: Activity },
 ];
 
 function App() {
@@ -110,7 +287,7 @@ function App() {
     <AppProvider>
       <Routes>
         <Route path="/login" element={<Login />} />
-        <Route path="/" element={<Layout />}>
+        <Route path="/" element={<RequireSession><Layout /></RequireSession>}>
           <Route index element={<Dashboard />} />
           <Route path="patients" element={<Guard permission="patients"><Patients /></Guard>} />
           <Route path="checkups" element={<Guard permission="checkups"><Checkups /></Guard>} />
@@ -118,6 +295,7 @@ function App() {
           <Route path="employees" element={<Guard permission="employees"><Employees /></Guard>} />
           <Route path="payroll" element={<Guard permission="payroll"><Payroll /></Guard>} />
           <Route path="users" element={<Guard permission="users"><UsersPage /></Guard>} />
+          <Route path="activity-logs" element={<Guard permission="activityLogs"><ActivityLogsPage /></Guard>} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
@@ -125,21 +303,75 @@ function App() {
   );
 }
 
+function RequireSession({ children }: { children: ReactNode }) {
+  const { isAuthenticated, authLoading } = useApp();
+  const location = useLocation();
+
+  if (authLoading) {
+    return (
+      <main className="loading-page">
+        <img className="loading-logo" src={stJudeLogo} alt="St. Jude Psychiatric and Custodial Home logo" />
+        <strong>Checking session...</strong>
+      </main>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  }
+
+  return <>{children}</>;
+}
+
 function Login() {
-  const { setRole } = useApp();
+  const { signIn, isAuthenticated, showToast } = useApp();
   const navigate = useNavigate();
-  const roles: Role[] = ["Super admin", "Staff", "Doctor"];
+  const location = useLocation();
+  const [email, setEmail] = useState("admin@stjude.local");
+  const [password, setPassword] = useState("Password123!");
+  const [error, setError] = useState("");
+  const demoAccounts = [
+    { label: "Super admin", email: "admin@stjude.local" },
+    { label: "Staff", email: "staff@stjude.local" },
+    { label: "Doctor", email: "doctor@stjude.local" },
+  ];
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setError("");
+    try {
+      await signIn(email, password);
+      navigate((location.state as { from?: string } | null)?.from ?? "/");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Login failed";
+      setError(message);
+      showToast(message, "error");
+    }
+  };
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate((location.state as { from?: string } | null)?.from ?? "/", { replace: true });
+    }
+  }, [isAuthenticated, location.state, navigate]);
+
   return (
     <main className="login-page">
       <section className="login-panel">
-        <div className="brand-mark"><Stethoscope size={34} /></div>
+        <img className="login-logo" src={stJudeLogo} alt="St. Jude Psychiatric and Custodial Home logo" />
         <h1>St. Jude Administrator Dashboard</h1>
-        <p>Choose a demo role to enter the psychiatric and custodial home management workspace.</p>
+        <p>Secure access for patient care, payroll, staffing, and administrative records.</p>
+        <form className="login-form" onSubmit={submit}>
+          <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email" />
+          <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Password" />
+          {error && <p className="form-error">{error}</p>}
+          <button className="primary-btn">Sign In</button>
+        </form>
+        <p className="login-demo-note">Demo password: <strong>Password123!</strong></p>
         <div className="role-grid">
-          {roles.map((role) => (
-            <button key={role} onClick={() => { setRole(role); navigate("/"); }} className="role-card">
+          {demoAccounts.map((account) => (
+            <button key={account.email} onClick={() => { setEmail(account.email); setPassword("Password123!"); }} className="role-card">
               <Shield size={22} />
-              <span>{role}</span>
+              <span>{account.label}</span>
             </button>
           ))}
         </div>
@@ -154,13 +386,13 @@ function Guard({ permission, children }: { permission: string; children: ReactNo
 }
 
 function Layout() {
-  const { currentUser, setRole, theme, toggleTheme } = useApp();
+  const { currentUser, signOut, theme, toggleTheme } = useApp();
   const [open, setOpen] = useState(false);
   return (
     <div className="app-shell">
       <aside className={`sidebar ${open ? "open" : ""}`}>
         <div className="sidebar-brand">
-          <div className="brand-mark"><Stethoscope size={28} /></div>
+          <img className="sidebar-logo" src={stJudeLogo} alt="St. Jude logo" />
           <div><strong>St. Jude's</strong><span>Care Administration</span></div>
           <button className="icon-btn mobile-only" onClick={() => setOpen(false)}><X size={18} /></button>
         </div>
@@ -172,13 +404,10 @@ function Layout() {
         </nav>
         <div className="sidebar-user">
           <small>Signed in as</small>
+          <Avatar name={currentUser.name} src={currentUser.profileImageUrl} size="lg" />
           <strong>{currentUser.name}</strong>
-          <select value={currentUser.role} onChange={(event) => setRole(event.target.value as Role)}>
-            <option>Super admin</option>
-            <option>Staff</option>
-            <option>Doctor</option>
-          </select>
-          <Link className="logout-link" to="/login"><LogOut size={16} /> Change login</Link>
+          <span className="sidebar-role">{currentUser.role}</span>
+          <Link className="logout-link" to="/login" onClick={() => void signOut()}><LogOut size={16} /> Logout</Link>
         </div>
       </aside>
       <div className="content-shell">
@@ -246,15 +475,17 @@ function Page({ title, children, action }: { title: string; children: ReactNode;
 }
 
 const emptyPatient = (doctorId: number): Omit<Patient, "id"> => ({
-  firstName: "", lastName: "", dateOfBirth: "1980-01-01", sex: "Male", civilStatus: "Single", nationality: "Filipino", address: "", contactNumber: "", emergencyContactName: "", emergencyContactNumber: "", attendingDoctorId: doctorId, status: "Admitted", ward: "", admissionDate: new Date().toISOString().slice(0, 10),
+  firstName: "", lastName: "", profileImageUrl: "", dateOfBirth: "1980-01-01", sex: "Male", civilStatus: "Single", nationality: "Filipino", address: "", contactNumber: "", emergencyContactName: "", emergencyContactNumber: "", attendingDoctorId: doctorId, status: "Admitted", ward: "", admissionDate: new Date().toISOString().slice(0, 10),
 });
 
 function Patients() {
-  const { data, currentUser, addPatient, updatePatient, deletePatient } = useApp();
+  const { data, currentUser, addPatient, updatePatient, deletePatient, refreshData, showToast, logActivity } = useApp();
   const doctors = data.employees.filter((employee) => employee.position === "Psychiatrist");
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<Patient | Omit<Patient, "id"> | null>(null);
+  const [error, setError] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(data.patients[0]?.id ?? null);
+  const [viewingCheckup, setViewingCheckup] = useState<CheckupRecord | null>(null);
   const selected = data.patients.find((patient) => patient.id === selectedId) ?? data.patients[0];
   const filtered = data.patients.filter((patient) => `${patient.firstName} ${patient.lastName} ${patient.ward} ${patient.status}`.toLowerCase().includes(query.toLowerCase()));
   const canManage = currentUser.role !== "Doctor";
@@ -262,20 +493,40 @@ function Patients() {
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!editing) return;
-    if ("id" in editing) {
-      await patientService.update(editing);
-      updatePatient(editing);
-    } else {
-      await patientService.create(editing);
-      addPatient(editing);
+    setError("");
+    try {
+      const previous = "id" in editing ? data.patients.find((patient) => patient.id === editing.id) : undefined;
+      if ("id" in editing) {
+        await backendApi.updatePatient(editing);
+        updatePatient(editing);
+      } else {
+        await backendApi.createPatient(editing);
+        addPatient(editing);
+      }
+      await refreshData();
+      logActivity({
+        action: "Saved",
+        entity: "Patient",
+        summary: `${"id" in editing ? "Updated" : "Created"} patient record for ${editing.firstName} ${editing.lastName}.`,
+        details: patientLogDetails(editing, previous),
+        severity: "success",
+      });
+      showToast("Patient record saved", "success");
+      setEditing(null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to save patient";
+      setError(message);
+      showToast(message, "error");
     }
-    setEditing(null);
   };
 
   const removePatient = async (patient: Patient) => {
     if (!window.confirm(`Delete patient record for ${patient.firstName} ${patient.lastName}? This will also remove related mock checkup records.`)) return;
-    await patientService.remove(patient.id);
+    await backendApi.deletePatient(patient.id);
     deletePatient(patient.id);
+    await refreshData();
+    logActivity({ action: "Deleted", entity: "Patient", summary: `Deleted patient record for ${patient.firstName} ${patient.lastName}.`, details: patientLogDetails(patient), severity: "danger" });
+    showToast("Patient record deleted", "success");
     if (selectedId === patient.id) setSelectedId(data.patients.find((item) => item.id !== patient.id)?.id ?? null);
   };
 
@@ -290,7 +541,7 @@ function Patients() {
               <tbody>
                 {filtered.map((patient) => (
                   <tr key={patient.id} onClick={() => setSelectedId(patient.id)}>
-                    <td><strong>{patient.firstName} {patient.lastName}</strong><small>{patient.sex} · {patient.civilStatus}</small></td>
+                    <td><div className="identity-cell"><Avatar name={`${patient.firstName} ${patient.lastName}`} src={patient.profileImageUrl} /><span><strong>{patient.firstName} {patient.lastName}</strong><small>{patient.sex} · {patient.civilStatus}</small></span></div></td>
                     <td>{ageFromBirthDate(patient.dateOfBirth)}</td>
                     <td><Badge>{patient.status}</Badge></td>
                     <td>{patient.ward}</td>
@@ -305,27 +556,51 @@ function Patients() {
             </table>
           </div>
         </section>
-        {selected && <PatientDetail patient={selected} />}
+        {selected && <PatientDetail patient={selected} onViewCheckup={setViewingCheckup} />}
       </div>
-      {editing && <Modal title={"id" in editing ? "Edit Patient Record" : "Add Patient Record"} onClose={() => setEditing(null)}><PatientForm patient={editing} doctors={doctors} onChange={setEditing} onSubmit={save} onCancel={() => setEditing(null)} /></Modal>}
+      {editing && <Modal title={"id" in editing ? "Edit Patient Record" : "Add Patient Record"} onClose={() => setEditing(null)}>{error && <p className="form-error">{error}</p>}<PatientForm patient={editing} doctors={doctors} onChange={setEditing} onSubmit={save} onCancel={() => setEditing(null)} /></Modal>}
+      {viewingCheckup && <CheckupDetailModal checkup={viewingCheckup} onClose={() => setViewingCheckup(null)} />}
     </Page>
   );
 }
 
-function PatientDetail({ patient }: { patient: Patient }) {
+function PatientDetail({ patient, onViewCheckup }: { patient: Patient; onViewCheckup: (checkup: CheckupRecord) => void }) {
   const { data } = useApp();
-  const records = data.checkups.filter((checkup) => checkup.patientId === patient.id);
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyItemsPerPage, setHistoryItemsPerPage] = useState(3);
+  const records = data.checkups
+    .filter((checkup) => checkup.patientId === patient.id)
+    .sort((a, b) => new Date(b.checkupDate).getTime() - new Date(a.checkupDate).getTime());
+  const historyTotalPages = Math.max(1, Math.ceil(records.length / historyItemsPerPage));
+  const historyPageRecords = records.slice((historyPage - 1) * historyItemsPerPage, historyPage * historyItemsPerPage);
+
+  useEffect(() => {
+    setHistoryPage(1);
+  }, [patient.id]);
+
   return (
     <aside className="panel detail-panel">
-      <h2>{patient.firstName} {patient.lastName}</h2>
+      <div className="profile-heading"><Avatar name={`${patient.firstName} ${patient.lastName}`} src={patient.profileImageUrl} size="lg" /><h2>{patient.firstName} {patient.lastName}</h2></div>
       <div className="detail-list">
         <p><span>Age</span>{ageFromBirthDate(patient.dateOfBirth)}</p>
         <p><span>Admission</span>{formatDate(patient.admissionDate)}</p>
         <p><span>Emergency</span>{patient.emergencyContactName} · {patient.emergencyContactNumber}</p>
         <p><span>Address</span>{patient.address}</p>
       </div>
-      <h3>Checkup History</h3>
-      <div className="stack">{records.map((checkup) => <CheckupSummary key={checkup.id} checkup={checkup} />)}</div>
+      <div className="checkup-history-header">
+        <div>
+          <h3>Checkup History</h3>
+          <p className="section-note">{records.length} saved records</p>
+        </div>
+      </div>
+      <div className="checkup-list">
+        {historyPageRecords.map((checkup) => <CheckupHistoryCard key={checkup.id} checkup={checkup} onView={onViewCheckup} />)}
+      </div>
+      {records.length > 0 ? (
+        <PaginationControls page={historyPage} totalPages={historyTotalPages} totalItems={records.length} label="checkups" pageSize={historyItemsPerPage} pageSizeOptions={[3, 5, 10]} onPageChange={setHistoryPage} onPageSizeChange={(size) => { setHistoryItemsPerPage(size); setHistoryPage(1); }} />
+      ) : (
+        <p className="section-note">No checkup records yet.</p>
+      )}
     </aside>
   );
 }
@@ -334,6 +609,7 @@ function PatientForm({ patient, doctors, onChange, onSubmit, onCancel }: { patie
   const set = (patch: Partial<Patient>) => onChange({ ...patient, ...patch });
   return (
     <form className="form-grid" onSubmit={onSubmit}>
+      <ProfilePhotoField name={`${patient.firstName} ${patient.lastName}`} value={patient.profileImageUrl} onChange={(profileImageUrl) => set({ profileImageUrl })} />
       <input required placeholder="First name" value={patient.firstName} onChange={(e) => set({ firstName: e.target.value })} />
       <input required placeholder="Last name" value={patient.lastName} onChange={(e) => set({ lastName: e.target.value })} />
       <label>Date of birth<input required type="date" value={patient.dateOfBirth} onChange={(e) => set({ dateOfBirth: e.target.value })} /></label>
@@ -358,29 +634,145 @@ const emptyCheckup = (patientId: number, doctorId: number): Omit<CheckupRecord, 
 });
 
 function Checkups() {
-  const { data, currentUser, addCheckup, updateCheckup, deleteCheckup } = useApp();
-  const doctorEmployee = data.employees.find((employee) => employee.email === "mcruz@stjude.local") ?? data.employees[0];
+  const { data, currentUser, addCheckup, updateCheckup, deleteCheckup, refreshData, showToast, logActivity } = useApp();
+  const doctorEmployee =
+    data.employees.find((employee) => employee.id === currentUser.linkedEmployeeId && employee.position === "Psychiatrist")
+    ?? data.employees.find((employee) => employee.email === "mcruz@stjude.local")
+    ?? data.employees.find((employee) => employee.position === "Psychiatrist")
+    ?? data.employees[0];
   const [editing, setEditing] = useState<CheckupRecord | Omit<CheckupRecord, "id" | "bmi"> | null>(null);
+  const [viewing, setViewing] = useState<CheckupRecord | null>(null);
   const [patientId, setPatientId] = useState(data.patients[0]?.id ?? 1);
-  const records = data.checkups.filter((record) => currentUser.role === "Doctor" ? record.doctorId === doctorEmployee.id : true);
-  const save = (event: FormEvent<HTMLFormElement>) => {
+  const [checkupPage, setCheckupPage] = useState(1);
+  const [checkupItemsPerPage, setCheckupItemsPerPage] = useState(6);
+  const records = data.checkups
+    .filter((record) => currentUser.role === "Doctor" ? record.doctorId === doctorEmployee.id : true)
+    .sort((a, b) => new Date(b.checkupDate).getTime() - new Date(a.checkupDate).getTime());
+  const checkupTotalPages = Math.max(1, Math.ceil(records.length / checkupItemsPerPage));
+  const checkupPageRecords = records.slice((checkupPage - 1) * checkupItemsPerPage, checkupPage * checkupItemsPerPage);
+
+  useEffect(() => {
+    setCheckupPage(1);
+  }, [currentUser.role, records.length]);
+
+  const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!editing) return;
-    "id" in editing ? updateCheckup(editing) : addCheckup(editing);
+    const previous = "id" in editing ? data.checkups.find((checkup) => checkup.id === editing.id) : undefined;
+    if ("id" in editing) {
+      await backendApi.updateCheckup(editing);
+      updateCheckup(editing);
+    } else {
+      await backendApi.createCheckup(editing);
+      addCheckup(editing);
+    }
+    await refreshData();
+    logActivity({
+      action: "Saved",
+      entity: "Checkup",
+      summary: `${"id" in editing ? "Updated" : "Created"} checkup record for ${patientName(data, editing.patientId)}.`,
+      details: checkupLogDetails(editing, data, previous),
+      severity: "success",
+    });
+    showToast("Checkup record saved", "success");
     setEditing(null);
   };
   return (
-    <Page title="Checkup Records" action={<button className="primary-btn" onClick={() => setEditing(emptyCheckup(patientId, doctorEmployee.id))}>Add Checkup</button>}>
+    <Page title={currentUser.role === "Doctor" ? "Conduct Checkups" : "Checkup Records"} action={<button className="primary-btn" onClick={() => setEditing(emptyCheckup(patientId, doctorEmployee.id))}>{currentUser.role === "Doctor" ? "Start Checkup" : "Add Checkup"}</button>}>
+      {currentUser.role === "Doctor" && (
+        <DoctorCheckupWorkspace
+          doctor={doctorEmployee}
+          patients={data.patients}
+          records={records}
+          onStart={(selectedPatientId) => setEditing(emptyCheckup(selectedPatientId, doctorEmployee.id))}
+          onEdit={setEditing}
+        />
+      )}
       <section className="panel">
-        <div className="toolbar">
+        <div className="checkup-list-header">
+          <div>
+            <h2>{currentUser.role === "Doctor" ? "My Recent Checkups" : "Checkup List"}</h2>
+            <p className="section-note">Newest clinical records are shown first.</p>
+          </div>
           <select value={patientId} onChange={(e) => setPatientId(Number(e.target.value))}>{data.patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.firstName} {patient.lastName}</option>)}</select>
         </div>
         <div className="record-grid">
-          {records.map((checkup) => <article className="record-card" key={checkup.id}><CheckupSummary checkup={checkup} /><p>{checkup.diagnosis || "No diagnosis entered"}</p><div className="actions"><button onClick={() => setEditing(checkup)}>Edit</button><button className="danger" onClick={() => deleteCheckup(checkup.id)}>Delete</button></div></article>)}
+          {checkupPageRecords.map((checkup) => <article className="record-card" key={checkup.id}><CheckupSummary checkup={checkup} /><p>{checkup.diagnosis || "No diagnosis entered"}</p><div className="actions"><button onClick={() => setViewing(checkup)}>View</button><button onClick={() => setEditing(checkup)}>Edit</button>{currentUser.role !== "Doctor" && <button className="danger" onClick={async () => { await backendApi.deleteCheckup(checkup.id); deleteCheckup(checkup.id); await refreshData(); logActivity({ action: "Deleted", entity: "Checkup", summary: `Deleted checkup record for ${patientName(data, checkup.patientId)}.`, details: checkupLogDetails(checkup, data), severity: "danger" }); showToast("Checkup record deleted", "success"); }}>Delete</button>}</div></article>)}
         </div>
+        {records.length > 0 ? (
+          <PaginationControls page={checkupPage} totalPages={checkupTotalPages} totalItems={records.length} label="checkups" pageSize={checkupItemsPerPage} pageSizeOptions={[6, 12, 24]} onPageChange={setCheckupPage} onPageSizeChange={(size) => { setCheckupItemsPerPage(size); setCheckupPage(1); }} />
+        ) : (
+          <p className="section-note">No checkup records found.</p>
+        )}
       </section>
-      {editing && <Modal title={"id" in editing ? "Edit Checkup" : "Add Checkup"} onClose={() => setEditing(null)}><CheckupForm checkup={editing} onChange={setEditing} onSubmit={save} /></Modal>}
+      {editing && <Modal title={"id" in editing ? "Edit Checkup" : currentUser.role === "Doctor" ? "Conduct Checkup" : "Add Checkup"} onClose={() => setEditing(null)}><CheckupForm checkup={editing} onChange={setEditing} onSubmit={save} /></Modal>}
+      {viewing && <CheckupDetailModal checkup={viewing} onClose={() => setViewing(null)} />}
     </Page>
+  );
+}
+
+function DoctorCheckupWorkspace({ doctor, patients, records, onStart, onEdit }: { doctor: Employee; patients: Patient[]; records: CheckupRecord[]; onStart: (patientId: number) => void; onEdit: (checkup: CheckupRecord) => void }) {
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState<Patient["status"] | "All">("All");
+  const today = new Date();
+  const activePatients = patients.filter((patient) => patient.status !== "Discharged" && patient.attendingDoctorId === doctor.id);
+  const duePatientIds = new Set(records.filter((record) => record.nextAppointment && new Date(record.nextAppointment) <= today).map((record) => record.patientId));
+  const filteredPatients = activePatients.filter((patient) => {
+    const matchesQuery = `${patient.firstName} ${patient.lastName} ${patient.ward} ${patient.status}`.toLowerCase().includes(query.toLowerCase());
+    const matchesStatus = status === "All" || patient.status === status;
+    return matchesQuery && matchesStatus;
+  });
+  const todaysCheckups = records.filter((record) => new Date(record.checkupDate).toDateString() === today.toDateString());
+  const pendingFollowUps = activePatients.filter((patient) => duePatientIds.has(patient.id));
+
+  return (
+    <section className="doctor-checkup-workspace">
+      <div className="metric-grid">
+        <Metric icon={<Users />} label="Assigned patients" value={activePatients.length} note={`Under ${doctorNameFromEmployee(doctor)}`} />
+        <Metric icon={<CalendarClock />} label="Due follow-ups" value={pendingFollowUps.length} note="Based on next appointment dates" />
+        <Metric icon={<ClipboardPlus />} label="Completed today" value={todaysCheckups.length} note="Saved checkup records" />
+      </div>
+      <section className="panel">
+        <div className="checkup-list-header">
+          <div>
+            <h2>Patient Checkup Queue</h2>
+            <p className="section-note">Choose a patient and start a structured clinical checkup.</p>
+          </div>
+          <select value={status} onChange={(event) => setStatus(event.target.value as Patient["status"] | "All")}>
+            <option>All</option>
+            <option>Admitted</option>
+            <option>Stable</option>
+            <option>Observation</option>
+          </select>
+        </div>
+        <SearchBox value={query} onChange={setQuery} placeholder="Search patient, ward, status..." />
+        <div className="doctor-queue-grid">
+          {filteredPatients.map((patient) => {
+            const latestRecord = records.find((record) => record.patientId === patient.id);
+            const isDue = duePatientIds.has(patient.id);
+            return (
+              <article className={`doctor-patient-card ${isDue ? "due" : ""}`} key={patient.id}>
+                <div className="identity-cell">
+                  <Avatar name={`${patient.firstName} ${patient.lastName}`} src={patient.profileImageUrl} />
+                  <span><strong>{patient.firstName} {patient.lastName}</strong><small>{patient.ward} · {patient.status}</small></span>
+                </div>
+                <div className="doctor-patient-meta">
+                  <p><span>Age</span>{ageFromBirthDate(patient.dateOfBirth)}</p>
+                  <p><span>Last checkup</span>{latestRecord ? formatDate(latestRecord.checkupDate) : "No record"}</p>
+                  <p><span>Next appointment</span>{latestRecord?.nextAppointment ? formatDate(latestRecord.nextAppointment) : "Not scheduled"}</p>
+                </div>
+                {latestRecord?.chiefComplaint && <p className="section-note">{latestRecord.chiefComplaint}</p>}
+                <div className="actions">
+                  <button className="primary-btn" onClick={() => onStart(patient.id)}>Conduct Checkup</button>
+                  {latestRecord && <button className="secondary-btn" onClick={() => onEdit(latestRecord)}>Edit Latest</button>}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+        {filteredPatients.length === 0 && <p className="section-note">No assigned patients match the current filters.</p>}
+      </section>
+    </section>
   );
 }
 
@@ -514,7 +906,7 @@ const formTemplates: FormTemplate[] = [
 ];
 
 function FormsPage() {
-  const { data, currentUser, addFormSubmission } = useApp();
+  const { data, currentUser, addFormSubmission, refreshData, showToast, logActivity } = useApp();
   const allowedTemplates = formTemplates.filter((template) => template.roles.includes(currentUser.role));
   const [selectedId, setSelectedId] = useState(allowedTemplates[0]?.id ?? formTemplates[0].id);
   const selected = allowedTemplates.find((template) => template.id === selectedId) ?? allowedTemplates[0];
@@ -524,16 +916,26 @@ function FormsPage() {
     setFields({});
   }, [selectedId]);
 
-  const submit = (event: FormEvent<HTMLFormElement>) => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!selected) return;
-    addFormSubmission({
+    const submission = {
       templateId: selected.id,
       title: selected.title,
       category: selected.category,
       status: "Submitted",
       fields,
+    } as const;
+    await fetch("http://localhost:3001/api/forms", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...submission, status: "SUBMITTED" }),
     });
+    addFormSubmission(submission);
+    await refreshData();
+      logActivity({ action: "Submitted", entity: "Form", summary: `Submitted ${selected.title}.`, details: [`Template: ${selected.title}`, `Category: ${selected.category}`, ...Object.entries(fields).map(([key, value]) => `${key}: ${value || "N/A"}`)], severity: "success" });
+    showToast("Form submitted", "success");
     setFields({});
   };
 
@@ -613,49 +1015,74 @@ function FormField({ field, value, onChange }: { field: FormTemplate["fields"][n
 }
 
 function Employees() {
-  const { data, addEmployee, updateEmployee, deleteEmployee } = useApp();
+  const { data, addEmployee, updateEmployee, deleteEmployee, refreshData, showToast, logActivity } = useApp();
   const [editing, setEditing] = useState<Employee | Omit<Employee, "id"> | null>(null);
+  const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const filtered = data.employees.filter((employee) => `${employee.firstName} ${employee.lastName} ${employee.position} ${employee.department}`.toLowerCase().includes(query.toLowerCase()));
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!editing) return;
-    if ("id" in editing) {
-      await employeeService.update(editing);
-      updateEmployee(editing);
-    } else {
-      await employeeService.create(editing);
-      addEmployee(editing);
+    setError("");
+    try {
+      const previous = "id" in editing ? data.employees.find((employee) => employee.id === editing.id) : undefined;
+      if ("id" in editing) {
+        await backendApi.updateEmployee(editing);
+        updateEmployee(editing);
+      } else {
+        await backendApi.createEmployee(editing);
+        addEmployee(editing);
+      }
+      await refreshData();
+      logActivity({
+        action: "Saved",
+        entity: "Employee",
+        summary: `${"id" in editing ? "Updated" : "Created"} employee record for ${editing.firstName} ${editing.lastName}.`,
+        details: employeeLogDetails(editing, previous),
+        severity: "success",
+      });
+      showToast("Employee record saved", "success");
+      setEditing(null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to save employee";
+      setError(message);
+      showToast(message, "error");
     }
-    setEditing(null);
   };
 
   const removeEmployee = async (employee: Employee) => {
     if (!window.confirm(`Delete employee record for ${employee.firstName} ${employee.lastName}?`)) return;
-    await employeeService.remove(employee.id);
+    await backendApi.deleteEmployee(employee.id);
     deleteEmployee(employee.id);
+    await refreshData();
+    logActivity({ action: "Deleted", entity: "Employee", summary: `Deleted employee record for ${employee.firstName} ${employee.lastName}.`, details: employeeLogDetails(employee), severity: "danger" });
+    showToast("Employee record deleted", "success");
   };
   return (
-    <Page title="Employee Management" action={<button className="primary-btn" onClick={() => setEditing({ employeeCode: "", firstName: "", lastName: "", position: "Care Staff", department: "Custodial Care", email: "", phone: "", hireDate: new Date().toISOString().slice(0, 10), baseSalary: 25000, workDaysPerWeek: 6, status: "Active" })}>Add Employee</button>}>
+    <Page title="Employee Management" action={<button className="primary-btn" onClick={() => setEditing({ employeeCode: "", firstName: "", lastName: "", profileImageUrl: "", position: "Care Staff", department: "Custodial Care", email: "", phone: "", hireDate: new Date().toISOString().slice(0, 10), baseSalary: 25000, workDaysPerWeek: 6, status: "Active" })}>Add Employee</button>}>
       <section className="panel">
         <SearchBox value={query} onChange={setQuery} placeholder="Search employees..." />
-        <div className="table-wrap"><table><thead><tr><th>Employee</th><th>Position</th><th>Department</th><th>Salary</th><th>Schedule</th><th>Status</th><th></th></tr></thead><tbody>{filtered.map((employee) => <tr key={employee.id}><td><strong>{employee.firstName} {employee.lastName}</strong><small>{employee.employeeCode}</small></td><td>{employee.position}</td><td>{employee.department}</td><td>{formatCurrency(employee.baseSalary)}</td><td>{employee.workDaysPerWeek}-day</td><td><Badge>{employee.status}</Badge></td><td className="actions"><button onClick={() => setEditing(employee)}>Edit</button><button className="danger" onClick={() => removeEmployee(employee)}>Delete</button></td></tr>)}</tbody></table></div>
+        <div className="table-wrap"><table><thead><tr><th>Employee</th><th>Position</th><th>Department</th><th>Salary</th><th>Schedule</th><th>Status</th><th></th></tr></thead><tbody>{filtered.map((employee) => <tr key={employee.id}><td><div className="identity-cell"><Avatar name={`${employee.firstName} ${employee.lastName}`} src={employee.profileImageUrl} /><span><strong>{employee.firstName} {employee.lastName}</strong><small>{employee.employeeCode}</small></span></div></td><td>{employee.position}</td><td>{employee.department}</td><td>{formatCurrency(employee.baseSalary)}</td><td>{employee.workDaysPerWeek}-day</td><td><Badge>{employee.status}</Badge></td><td className="actions"><button onClick={() => setEditing(employee)}>Edit</button><button className="danger" onClick={() => removeEmployee(employee)}>Delete</button></td></tr>)}</tbody></table></div>
       </section>
-      {editing && <Modal title={"id" in editing ? "Edit Employee Record" : "Add Employee Record"} onClose={() => setEditing(null)}><EmployeeForm employee={editing} onChange={setEditing} onSubmit={save} onCancel={() => setEditing(null)} /></Modal>}
+      {editing && <Modal title={"id" in editing ? "Edit Employee Record" : "Add Employee Record"} onClose={() => setEditing(null)}>{error && <p className="form-error">{error}</p>}<EmployeeForm employee={editing} onChange={setEditing} onSubmit={save} onCancel={() => setEditing(null)} /></Modal>}
     </Page>
   );
 }
 
 function EmployeeForm({ employee, onChange, onSubmit, onCancel }: { employee: Employee | Omit<Employee, "id">; onChange: (employee: Employee | Omit<Employee, "id">) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onCancel: () => void }) {
   const set = (patch: Partial<Employee>) => onChange({ ...employee, ...patch });
-  return <form className="form-grid" onSubmit={onSubmit}><input required placeholder="Employee code" value={employee.employeeCode} onChange={(e) => set({ employeeCode: e.target.value })} /><input required placeholder="First name" value={employee.firstName} onChange={(e) => set({ firstName: e.target.value })} /><input required placeholder="Last name" value={employee.lastName} onChange={(e) => set({ lastName: e.target.value })} /><select value={employee.position} onChange={(e) => set({ position: e.target.value })}><option>Psychiatrist</option><option>Nurse</option><option>Care Staff</option><option>Cook</option><option>Administrator</option></select><input placeholder="Department" value={employee.department} onChange={(e) => set({ department: e.target.value })} /><input type="email" placeholder="Email" value={employee.email} onChange={(e) => set({ email: e.target.value })} /><input placeholder="Phone" value={employee.phone} onChange={(e) => set({ phone: e.target.value })} /><label>Hire date<input type="date" value={employee.hireDate} onChange={(e) => set({ hireDate: e.target.value })} /></label><input type="number" placeholder="Monthly salary" value={employee.baseSalary} onChange={(e) => set({ baseSalary: Number(e.target.value) })} /><select value={employee.workDaysPerWeek} onChange={(e) => set({ workDaysPerWeek: Number(e.target.value) as 5 | 6 })}><option value={5}>5-day workweek</option><option value={6}>6-day workweek</option></select><select value={employee.status} onChange={(e) => set({ status: e.target.value as Employee["status"] })}><option>Active</option><option>Inactive</option></select><div className="form-actions"><button type="button" className="secondary-btn" onClick={onCancel}>Cancel</button><button className="primary-btn">Save Employee</button></div></form>;
+  return <form className="form-grid" onSubmit={onSubmit}><ProfilePhotoField name={`${employee.firstName} ${employee.lastName}`} value={employee.profileImageUrl} onChange={(profileImageUrl) => set({ profileImageUrl })} /><input required placeholder="Employee code" value={employee.employeeCode} onChange={(e) => set({ employeeCode: e.target.value })} /><input required placeholder="First name" value={employee.firstName} onChange={(e) => set({ firstName: e.target.value })} /><input required placeholder="Last name" value={employee.lastName} onChange={(e) => set({ lastName: e.target.value })} /><select value={employee.position} onChange={(e) => set({ position: e.target.value })}><option>Psychiatrist</option><option>Nurse</option><option>Care Staff</option><option>Cook</option><option>Administrator</option></select><input placeholder="Department" value={employee.department} onChange={(e) => set({ department: e.target.value })} /><input type="email" placeholder="Email" value={employee.email} onChange={(e) => set({ email: e.target.value })} /><input placeholder="Phone" value={employee.phone} onChange={(e) => set({ phone: e.target.value })} /><label>Hire date<input type="date" value={employee.hireDate} onChange={(e) => set({ hireDate: e.target.value })} /></label><input type="number" placeholder="Monthly salary" value={employee.baseSalary} onChange={(e) => set({ baseSalary: Number(e.target.value) })} /><select value={employee.workDaysPerWeek} onChange={(e) => set({ workDaysPerWeek: Number(e.target.value) as 5 | 6 })}><option value={5}>5-day workweek</option><option value={6}>6-day workweek</option></select><select value={employee.status} onChange={(e) => set({ status: e.target.value as Employee["status"] })}><option>Active</option><option>Inactive</option></select><div className="form-actions"><button type="button" className="secondary-btn" onClick={onCancel}>Cancel</button><button className="primary-btn">Save Employee</button></div></form>;
 }
 
 function Payroll() {
-  const { data, addPayroll } = useApp();
+  const { data, addPayroll, refreshData, showToast, logActivity } = useApp();
   const activeEmployees = data.employees.filter((item) => item.status === "Active");
   const [mode, setMode] = useState<"single" | "bulk">("single");
   const [employeeId, setEmployeeId] = useState(data.employees[0]?.id ?? 1);
+  const [historyEmployeeId, setHistoryEmployeeId] = useState<number | "all">("all");
+  const [selectedPayrollIds, setSelectedPayrollIds] = useState<number[]>([]);
+  const [payrollPage, setPayrollPage] = useState(1);
+  const [payrollItemsPerPage, setPayrollItemsPerPage] = useState(8);
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<number[]>(activeEmployees.map((item) => item.id));
   const [daysWorked, setDaysWorked] = useState(13);
   const [overtimeHours, setOvertimeHours] = useState(0);
@@ -689,31 +1116,80 @@ function Payroll() {
   const bulkGross = bulkPreview.reduce((sum, record) => sum + record.grossPay, 0);
   const bulkDeductions = bulkPreview.reduce((sum, record) => sum + record.totalDeductions, 0);
   const bulkNet = bulkPreview.reduce((sum, record) => sum + record.netPay, 0);
+  const payrollRecords = [...data.payrollRecords].sort((a, b) => new Date(b.payPeriodEnd).getTime() - new Date(a.payPeriodEnd).getTime());
+  const filteredPayrollRecords = historyEmployeeId === "all" ? payrollRecords : payrollRecords.filter((record) => record.employeeId === historyEmployeeId);
+  const payrollTotalPages = Math.max(1, Math.ceil(filteredPayrollRecords.length / payrollItemsPerPage));
+  const payrollPageRecords = filteredPayrollRecords.slice((payrollPage - 1) * payrollItemsPerPage, payrollPage * payrollItemsPerPage);
+  const totalGrossPayroll = payrollRecords.reduce((sum, record) => sum + record.grossPay, 0);
+  const totalNetPayroll = payrollRecords.reduce((sum, record) => sum + record.netPay, 0);
+  const totalPayrollDeductions = payrollRecords.reduce((sum, record) => sum + record.totalDeductions, 0);
+  const latestPayroll = payrollRecords[0];
   const toggleEmployee = (id: number) => setSelectedEmployeeIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
-  const savePayroll = () => addPayroll(createPayrollRecord(employee));
-  const saveBulkPayroll = () => {
+  const togglePayrollRecord = (id: number) => setSelectedPayrollIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+  const savePayroll = async () => {
+    await backendApi.createPayroll(createPayrollRecord(employee));
+    addPayroll(createPayrollRecord(employee));
+    await refreshData();
+    logActivity({ action: "Created", entity: "Payroll", summary: `Created payroll record for ${employeeName(data, employee.id)}.`, details: payrollLogDetails(createPayrollRecord(employee), data), severity: "success" });
+    showToast("Payroll record saved", "success");
+  };
+  const saveBulkPayroll = async () => {
     if (selectedEmployeeIds.length === 0) {
       window.alert("Select at least one employee for bulk payroll.");
       return;
     }
+    await backendApi.createBulkPayroll(bulkPreview);
     bulkPreview.forEach((record) => addPayroll(record));
+    await refreshData();
+    logActivity({ action: "Bulk created", entity: "Payroll", summary: `Created ${bulkPreview.length} payroll records in bulk.`, details: bulkPreview.flatMap((record) => payrollLogDetails(record, data)).slice(0, 24), severity: "success" });
+    showToast(`${bulkPreview.length} payroll records created`, "success");
   };
   const exportPayslip = (record: PayrollRecord) => {
-    const recordEmployee = data.employees.find((item) => item.id === record.employeeId);
-    if (!recordEmployee) return;
-    const html = createPayslipHtml(record, recordEmployee);
-    const blob = new Blob([html], { type: "text/html" });
+    window.open(backendApi.payslipUrl(record.id), "_blank", "noopener,noreferrer");
+  };
+  const bulkExportPayslips = async () => {
+    if (selectedPayrollIds.length === 0) {
+      showToast("Select at least one payroll record to export", "error");
+      return;
+    }
+    const response = await fetch(backendApi.bulkPayslipUrl(), {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: selectedPayrollIds }),
+    });
+    if (!response.ok) {
+      showToast("Failed to export selected payslips", "error");
+      return;
+    }
+    const blob = await response.blob();
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `payslip-${recordEmployee.employeeCode}-${record.payPeriodStart}.html`;
+    link.download = `payslips-bulk-${new Date().toISOString().slice(0, 10)}.pdf`;
     document.body.appendChild(link);
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
+    logActivity({ action: "Exported", entity: "Payslip", summary: `Exported ${selectedPayrollIds.length} payslips as PDF.`, severity: "info" });
+    showToast(`Exported ${selectedPayrollIds.length} payslips as PDF`, "success");
+  };
+  const deletePayroll = async (record: PayrollRecord) => {
+    if (!window.confirm(`Delete payroll for ${employeeName(data, record.employeeId)}?`)) return;
+    await backendApi.deletePayroll(record.id);
+    await refreshData();
+    setSelectedPayrollIds((current) => current.filter((id) => id !== record.id));
+    logActivity({ action: "Deleted", entity: "Payroll", summary: `Deleted payroll record for ${employeeName(data, record.employeeId)}.`, details: payrollLogDetails(record, data), severity: "danger" });
+    showToast("Payroll record deleted", "success");
   };
   return (
     <Page title="Payroll">
+      <section className="payroll-overview-grid">
+        <Metric icon={<Banknote />} label="Gross payroll" value={formatCurrency(totalGrossPayroll)} note={`${payrollRecords.length} saved records`} />
+        <Metric icon={<Banknote />} label="Net payroll" value={formatCurrency(totalNetPayroll)} note="Total employee take-home pay" />
+        <Metric icon={<Banknote />} label="Deductions" value={formatCurrency(totalPayrollDeductions)} note="Contributions, tax, other deductions" />
+        <Metric icon={<CalendarClock />} label="Latest period" value={latestPayroll ? formatDate(latestPayroll.payPeriodEnd) : "N/A"} note={latestPayroll ? employeeName(data, latestPayroll.employeeId) : "No payroll records yet"} />
+      </section>
       <div className="dashboard-grid">
         <section className="panel">
           <div className="payroll-tabs">
@@ -755,28 +1231,169 @@ function Payroll() {
           <button className="primary-btn" onClick={mode === "bulk" ? saveBulkPayroll : savePayroll}>{mode === "bulk" ? `Create ${selectedEmployeeIds.length} Payroll Records` : "Save Payroll Record"}</button>
         </section>
         <section className="panel">
-          <h2>Saved Payroll Records</h2>
-          <div className="stack">{data.payrollRecords.map((record) => <div className="list-card payroll-record-card" key={record.id}><strong>{employeeName(data, record.employeeId)}</strong><span>{formatDate(record.payPeriodStart)} - {formatDate(record.payPeriodEnd)}</span><b>{formatCurrency(record.netPay)}</b><button className="secondary-btn" onClick={() => exportPayslip(record)}>Export Payslip</button></div>)}</div>
+          <div className="payroll-history-header">
+            <div>
+              <h2>Payroll Records</h2>
+              <p className="section-note">Review all payroll runs or filter by employee.</p>
+            </div>
+            <button className="secondary-btn" onClick={bulkExportPayslips}>Bulk Export Payslips</button>
+          </div>
+          <select value={historyEmployeeId} onChange={(event) => { setHistoryEmployeeId(event.target.value === "all" ? "all" : Number(event.target.value)); setPayrollPage(1); }}>
+            <option value="all">All employees</option>
+            {data.employees.map((item) => <option key={item.id} value={item.id}>{item.firstName} {item.lastName} - {item.position}</option>)}
+          </select>
+          <div className="table-wrap payroll-table-wrap">
+            <table className="payroll-table">
+              <thead>
+                <tr>
+                  <th><input type="checkbox" checked={payrollPageRecords.length > 0 && payrollPageRecords.every((record) => selectedPayrollIds.includes(record.id))} onChange={(event) => event.target.checked ? setSelectedPayrollIds((current) => Array.from(new Set([...current, ...payrollPageRecords.map((record) => record.id)]))) : setSelectedPayrollIds((current) => current.filter((id) => !payrollPageRecords.some((record) => record.id === id)))} /></th>
+                  <th>Employee</th>
+                  <th>Pay Period</th>
+                  <th>Gross</th>
+                  <th>Deductions</th>
+                  <th>Net Pay</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {payrollPageRecords.map((record) => (
+                  <tr key={record.id}>
+                    <td><input type="checkbox" checked={selectedPayrollIds.includes(record.id)} onChange={() => togglePayrollRecord(record.id)} /></td>
+                    <td><strong>{employeeName(data, record.employeeId)}</strong></td>
+                    <td>{formatDate(record.payPeriodStart)} - {formatDate(record.payPeriodEnd)}</td>
+                    <td>{formatCurrency(record.grossPay)}</td>
+                    <td>{formatCurrency(record.totalDeductions)}</td>
+                    <td><strong>{formatCurrency(record.netPay)}</strong></td>
+                    <td><div className="actions"><button className="secondary-btn" onClick={() => exportPayslip(record)}>Export PDF</button><button className="danger" onClick={() => deletePayroll(record)}>Delete</button></div></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <PaginationControls page={payrollPage} totalPages={payrollTotalPages} totalItems={filteredPayrollRecords.length} label="records" pageSize={payrollItemsPerPage} pageSizeOptions={[8, 15, 25, 50]} onPageChange={setPayrollPage} onPageSizeChange={(size) => { setPayrollItemsPerPage(size); setPayrollPage(1); }} />
+          <div className="pagination-bar legacy-pagination-hidden">
+            <span>Page {payrollPage} of {payrollTotalPages} · {filteredPayrollRecords.length} records</span>
+            <div>
+              <button className="secondary-btn" disabled={payrollPage === 1} onClick={() => setPayrollPage((page) => Math.max(1, page - 1))}>Previous</button>
+              <button className="secondary-btn" disabled={payrollPage === payrollTotalPages} onClick={() => setPayrollPage((page) => Math.min(payrollTotalPages, page + 1))}>Next</button>
+            </div>
+          </div>
+          {filteredPayrollRecords.length === 0 && <p className="section-note">No payroll records found for this employee.</p>}
         </section>
       </div>
     </Page>
   );
 }
 
+function ActivityLogsPage() {
+  const { data } = useApp();
+  const [query, setQuery] = useState("");
+  const [entity, setEntity] = useState("All");
+  const [severity, setSeverity] = useState("All");
+  const [page, setPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(3);
+  const logs = [...data.activityLogs].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  const entities = ["All", ...Array.from(new Set(logs.map((log) => log.entity))).sort()];
+  const filtered = logs.filter((log) => {
+    const matchesQuery = `${log.actorName} ${log.actorRole} ${log.action} ${log.entity} ${log.summary}`.toLowerCase().includes(query.toLowerCase());
+    const matchesEntity = entity === "All" || log.entity === entity;
+    const matchesSeverity = severity === "All" || log.severity === severity;
+    return matchesQuery && matchesEntity && matchesSeverity;
+  });
+  const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
+  const pageLogs = filtered.slice((page - 1) * itemsPerPage, page * itemsPerPage);
+
+  useEffect(() => {
+    setPage(1);
+  }, [query, entity, severity]);
+
+  return (
+    <Page title="Activity Logs" action={<Badge>Super admin only</Badge>}>
+      <section className="activity-overview-grid">
+        <Metric icon={<Activity />} label="Total events" value={logs.length} note="Frontend audit trail" />
+        <Metric icon={<Shield />} label="Admin actions" value={logs.filter((log) => log.actorRole === "Super admin").length} note="Performed by Super admins" />
+        <Metric icon={<CalendarClock />} label="Today" value={logs.filter((log) => new Date(log.timestamp).toDateString() === new Date().toDateString()).length} note="Events recorded today" />
+      </section>
+      <section className="panel">
+        <div className="activity-filter-bar">
+          <SearchBox value={query} onChange={setQuery} placeholder="Search actor, action, module..." />
+          <select value={entity} onChange={(event) => setEntity(event.target.value)}>
+            {entities.map((item) => <option key={item}>{item}</option>)}
+          </select>
+          <select value={severity} onChange={(event) => setSeverity(event.target.value)}>
+            <option>All</option>
+            <option>info</option>
+            <option>success</option>
+            <option>warning</option>
+            <option>danger</option>
+          </select>
+        </div>
+        <div className="activity-log-list">
+          {pageLogs.map((log) => <ActivityLogCard key={log.id} log={log} />)}
+        </div>
+        {filtered.length > 0 ? (
+          <PaginationControls page={page} totalPages={totalPages} totalItems={filtered.length} label="events" pageSize={itemsPerPage} pageSizeOptions={[3, 5, 10]} onPageChange={setPage} onPageSizeChange={(size) => { setItemsPerPage(size); setPage(1); }} />
+        ) : (
+          <p className="section-note">No activity logs match the current filters.</p>
+        )}
+      </section>
+    </Page>
+  );
+}
+
+function ActivityLogCard({ log }: { log: ActivityLog }) {
+  return (
+    <article className={`activity-log-card activity-log-${log.severity}`}>
+      <div className="activity-log-icon"><Activity size={18} /></div>
+      <div>
+        <div className="activity-log-heading">
+          <strong>{log.action} · {log.entity}</strong>
+          <Badge>{log.severity}</Badge>
+        </div>
+        <p>{log.summary}</p>
+        {log.details && log.details.length > 0 && (
+          <div className="activity-log-details">
+            {log.details.map((detail) => <span key={detail}>{detail}</span>)}
+          </div>
+        )}
+        <small>{log.actorName} · {log.actorRole} · {formatDate(log.timestamp)}</small>
+      </div>
+    </article>
+  );
+}
+
 function UsersPage() {
-  const { data, currentUser, addUser, updateUser, deleteUser } = useApp();
+  const { data, currentUser, addUser, updateUser, deleteUser, refreshData, showToast, logActivity } = useApp();
   const [editing, setEditing] = useState<User | Omit<User, "id"> | null>(null);
+  const [error, setError] = useState("");
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!editing) return;
-    if ("id" in editing) {
-      await authService.update(editing);
-      updateUser(editing);
-    } else {
-      await authService.create(editing);
-      addUser(editing);
+    setError("");
+    try {
+      const previous = "id" in editing ? data.users.find((user) => user.id === editing.id) : undefined;
+      if ("id" in editing) {
+        await backendApi.updateUser(editing);
+        updateUser(editing);
+      } else {
+        await backendApi.createUser(editing);
+        addUser(editing);
+      }
+      await refreshData();
+      logActivity({
+        action: "Saved",
+        entity: "User",
+        summary: `${"id" in editing ? "Updated" : "Created"} user account for ${editing.name}.`,
+        details: userLogDetails(editing, previous),
+        severity: "success",
+      });
+      showToast("User account saved", "success");
+      setEditing(null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to save user";
+      setError(message);
+      showToast(message, "error");
     }
-    setEditing(null);
   };
 
   const removeUser = async (user: User) => {
@@ -785,25 +1402,54 @@ function UsersPage() {
       return;
     }
     if (!window.confirm(`Delete user account for ${user.name}?`)) return;
-    await authService.remove(user.id);
+    await backendApi.deleteUser(user.id);
     deleteUser(user.id);
+    await refreshData();
+    logActivity({ action: "Deleted", entity: "User", summary: `Deleted user account for ${user.name}.`, details: userLogDetails(user), severity: "danger" });
+    showToast("User account deleted", "success");
   };
 
   return (
-    <Page title="Users and Roles" action={<button className="primary-btn" onClick={() => setEditing({ name: "", email: "", role: "Staff", status: "Active" })}>Add User</button>}>
-      <section className="panel"><div className="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead><tbody>{data.users.map((user) => <tr key={user.id}><td><strong>{user.name}</strong></td><td>{user.email}</td><td><Badge>{user.role}</Badge></td><td>{user.status}</td><td className="actions"><button onClick={() => setEditing(user)}>Edit</button><button className="danger" onClick={() => removeUser(user)}>Delete</button></td></tr>)}</tbody></table></div></section>
-      {editing && <Modal title={"id" in editing ? "Edit User Account" : "Add User Account"} onClose={() => setEditing(null)}><UserForm user={editing} employees={data.employees} onChange={setEditing} onSubmit={save} onCancel={() => setEditing(null)} /></Modal>}
+    <Page title="Users and Roles" action={<button className="primary-btn" onClick={() => setEditing({ name: "", email: "", profileImageUrl: "", role: "Staff", status: "Active" })}>Add User</button>}>
+      <section className="panel"><div className="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead><tbody>{data.users.map((user) => <tr key={user.id}><td><div className="identity-cell"><Avatar name={user.name} src={user.profileImageUrl} /><strong>{user.name}</strong></div></td><td>{user.email}</td><td><Badge>{user.role}</Badge></td><td>{user.status}</td><td className="actions"><button onClick={() => setEditing(user)}>Edit</button><button className="danger" onClick={() => removeUser(user)}>Delete</button></td></tr>)}</tbody></table></div></section>
+      {editing && <Modal title={"id" in editing ? "Edit User Account" : "Add User Account"} onClose={() => setEditing(null)}>{error && <p className="form-error">{error}</p>}<UserForm user={editing} employees={data.employees} onChange={setEditing} onSubmit={save} onCancel={() => setEditing(null)} /></Modal>}
     </Page>
   );
 }
 
 function UserForm({ user, employees, onChange, onSubmit, onCancel }: { user: User | Omit<User, "id">; employees: Employee[]; onChange: (user: User | Omit<User, "id">) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onCancel: () => void }) {
   const set = (patch: Partial<User>) => onChange({ ...user, ...patch });
-  return <form className="form-grid" onSubmit={onSubmit}><input required placeholder="Name" value={user.name} onChange={(e) => set({ name: e.target.value })} /><input required type="email" placeholder="Email" value={user.email} onChange={(e) => set({ email: e.target.value })} /><select value={user.role} onChange={(e) => set({ role: e.target.value as Role })}><option>Super admin</option><option>Staff</option><option>Doctor</option></select><select value={user.status} onChange={(e) => set({ status: e.target.value as User["status"] })}><option>Active</option><option>Inactive</option></select><select value={user.linkedEmployeeId ?? ""} onChange={(e) => set({ linkedEmployeeId: e.target.value ? Number(e.target.value) : undefined })}><option value="">No linked employee</option>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.firstName} {employee.lastName} · {employee.position}</option>)}</select><div className="form-actions"><button type="button" className="secondary-btn" onClick={onCancel}>Cancel</button><button className="primary-btn">Save User</button></div></form>;
+  return <form className="form-grid" onSubmit={onSubmit}><ProfilePhotoField name={user.name} value={user.profileImageUrl} onChange={(profileImageUrl) => set({ profileImageUrl })} /><input required placeholder="Name" value={user.name} onChange={(e) => set({ name: e.target.value })} /><input required type="email" placeholder="Email" value={user.email} onChange={(e) => set({ email: e.target.value })} /><select value={user.role} onChange={(e) => set({ role: e.target.value as Role })}><option>Super admin</option><option>Staff</option><option>Doctor</option></select><select value={user.status} onChange={(e) => set({ status: e.target.value as User["status"] })}><option>Active</option><option>Inactive</option></select><select value={user.linkedEmployeeId ?? ""} onChange={(e) => set({ linkedEmployeeId: e.target.value ? Number(e.target.value) : undefined })}><option value="">No linked employee</option>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.firstName} {employee.lastName} · {employee.position}</option>)}</select><div className="form-actions"><button type="button" className="secondary-btn" onClick={onCancel}>Cancel</button><button className="primary-btn">Save User</button></div></form>;
 }
 
 function SearchBox({ value, onChange, placeholder }: { value: string; onChange: (value: string) => void; placeholder: string }) {
   return <label className="search-box"><Search size={18} /><input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} /></label>;
+}
+
+function Avatar({ name, src, size = "sm" }: { name: string; src?: string; size?: "sm" | "lg" }) {
+  const initials = name.split(" ").filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "SJ";
+  return <div className={`avatar ${size === "lg" ? "avatar-lg" : ""}`}>{src ? <img src={src} alt={`${name} profile`} /> : <span>{initials}</span>}</div>;
+}
+
+function ProfilePhotoField({ name, value, onChange }: { name: string; value?: string; onChange: (value: string) => void }) {
+  const handleFile = (file?: File) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => onChange(String(reader.result ?? ""));
+    reader.readAsDataURL(file);
+  };
+
+  return (
+    <div className="photo-field">
+      <Avatar name={name} src={value} size="lg" />
+      <div>
+        <strong>Profile picture</strong>
+        <span>PNG or JPG. Stored as a demo data URL for now.</span>
+        <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => handleFile(event.target.files?.[0])} />
+        {value && <button type="button" className="secondary-btn" onClick={() => onChange("")}>Remove photo</button>}
+      </div>
+    </div>
+  );
 }
 
 function Badge({ children }: { children: ReactNode }) {
@@ -814,9 +1460,149 @@ function Modal({ title, children, onClose }: { title: string; children: ReactNod
   return <div className="app-modal-backdrop"><section className="app-modal"><div className="modal-header"><h2>{title}</h2><button className="icon-btn" onClick={onClose}><X size={18} /></button></div>{children}</section></div>;
 }
 
+function PaginationControls({ page, totalPages, totalItems, label, pageSize, pageSizeOptions, onPageChange, onPageSizeChange }: { page: number; totalPages: number; totalItems: number; label: string; pageSize: number; pageSizeOptions: number[]; onPageChange: (page: number) => void; onPageSizeChange: (pageSize: number) => void }) {
+  return (
+    <div className="pagination-bar">
+      <label className="pagination-size">
+        Rows
+        <select value={pageSize} onChange={(event) => onPageSizeChange(Number(event.target.value))}>
+          {pageSizeOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+        </select>
+      </label>
+      <span>Page {page} of {totalPages} · {totalItems} {label}</span>
+      <div>
+        <button className="secondary-btn" disabled={page === 1} onClick={() => onPageChange(Math.max(1, page - 1))}>Previous</button>
+        <button className="secondary-btn" disabled={page === totalPages} onClick={() => onPageChange(Math.min(totalPages, page + 1))}>Next</button>
+      </div>
+    </div>
+  );
+}
+
 function CheckupSummary({ checkup }: { checkup: CheckupRecord }) {
   const { data } = useApp();
   return <div className="list-card"><strong>{patientName(data, checkup.patientId)}</strong><span>{formatDate(checkup.checkupDate)} · {doctorName(data, checkup.doctorId)}</span><small>{checkup.chiefComplaint || "Routine follow-up"}</small></div>;
+}
+
+function CheckupHistoryCard({ checkup, onView }: { checkup: CheckupRecord; onView?: (checkup: CheckupRecord) => void }) {
+  return (
+    <article className="list-card checkup-history-card">
+      <CheckupSummary checkup={checkup} />
+      <p>{checkup.diagnosis || "No diagnosis entered"}</p>
+      <small>Next appointment: {checkup.nextAppointment ? formatDate(checkup.nextAppointment) : "Not scheduled"}</small>
+      {onView && <button className="secondary-btn" onClick={() => onView(checkup)}>View Details</button>}
+    </article>
+  );
+}
+
+function CheckupDetailModal({ checkup, onClose }: { checkup: CheckupRecord; onClose: () => void }) {
+  const { data } = useApp();
+  return (
+    <Modal title="Checkup Details" onClose={onClose}>
+      <div className="checkup-detail-modal">
+        <div className="detail-list">
+          <p><span>Patient</span>{patientName(data, checkup.patientId)}</p>
+          <p><span>Doctor</span>{doctorName(data, checkup.doctorId)}</p>
+          <p><span>Checkup date</span>{formatDate(checkup.checkupDate)}</p>
+          <p><span>Next appointment</span>{checkup.nextAppointment ? formatDate(checkup.nextAppointment) : "Not scheduled"}</p>
+          <p><span>Blood pressure</span>{checkup.bloodPressure || "N/A"}</p>
+          <p><span>Temperature</span>{checkup.temperature ? `${checkup.temperature} F` : "N/A"}</p>
+          <p><span>Heart rate</span>{checkup.heartRate ? `${checkup.heartRate} bpm` : "N/A"}</p>
+          <p><span>BMI</span>{checkup.bmi ?? calculateBmi(checkup.weight, checkup.height) ?? "N/A"}</p>
+        </div>
+        <div className="checkup-detail-notes">
+          <p><span>Chief complaint</span>{checkup.chiefComplaint || "N/A"}</p>
+          <p><span>Symptoms</span>{checkup.symptoms || "N/A"}</p>
+          <p><span>Diagnosis</span>{checkup.diagnosis || "N/A"}</p>
+          <p><span>Prescriptions</span>{checkup.prescriptions || "N/A"}</p>
+          <p><span>Notes</span>{checkup.notes || "N/A"}</p>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function changedFields<T extends object>(before: T | undefined, after: T, fields: Array<[keyof T, string]>) {
+  const valueFrom = (source: T, key: keyof T) => source[key] as unknown;
+  if (!before) return fields.map(([key, label]) => `${label}: ${displayLogValue(valueFrom(after, key))}`).filter((line) => !line.endsWith(": N/A"));
+  return fields
+    .filter(([key]) => valueFrom(before, key) !== valueFrom(after, key))
+    .map(([key, label]) => `${label}: ${displayLogValue(valueFrom(before, key))} -> ${displayLogValue(valueFrom(after, key))}`);
+}
+
+function patientLogDetails(patient: Patient | Omit<Patient, "id">, previous?: Patient) {
+  return changedFields(previous, patient, [
+    ["firstName", "First name"],
+    ["lastName", "Last name"],
+    ["status", "Status"],
+    ["ward", "Ward / room"],
+    ["attendingDoctorId", "Doctor ID"],
+    ["contactNumber", "Contact"],
+    ["emergencyContactName", "Emergency contact"],
+    ["emergencyContactNumber", "Emergency number"],
+    ["address", "Address"],
+  ]);
+}
+
+function employeeLogDetails(employee: Employee | Omit<Employee, "id">, previous?: Employee) {
+  return changedFields(previous, employee, [
+    ["employeeCode", "Employee code"],
+    ["firstName", "First name"],
+    ["lastName", "Last name"],
+    ["position", "Position"],
+    ["department", "Department"],
+    ["baseSalary", "Base salary"],
+    ["workDaysPerWeek", "Work days/week"],
+    ["status", "Status"],
+  ]);
+}
+
+function userLogDetails(user: User | Omit<User, "id">, previous?: User) {
+  return changedFields(previous, user, [
+    ["name", "Name"],
+    ["email", "Email"],
+    ["role", "Role"],
+    ["status", "Status"],
+    ["linkedEmployeeId", "Linked employee ID"],
+  ]);
+}
+
+function checkupLogDetails(checkup: CheckupRecord | Omit<CheckupRecord, "id" | "bmi">, data: AppData, previous?: CheckupRecord) {
+  return [
+    `Patient: ${patientName(data, checkup.patientId)}`,
+    `Doctor: ${doctorName(data, checkup.doctorId)}`,
+    ...changedFields(previous, checkup, [
+      ["checkupDate", "Checkup date"],
+      ["chiefComplaint", "Chief complaint"],
+      ["symptoms", "Symptoms"],
+      ["diagnosis", "Diagnosis"],
+      ["prescriptions", "Prescriptions"],
+      ["bloodPressure", "Blood pressure"],
+      ["temperature", "Temperature"],
+      ["heartRate", "Heart rate"],
+      ["weight", "Weight"],
+      ["height", "Height"],
+      ["notes", "Notes"],
+      ["nextAppointment", "Next appointment"],
+    ]),
+  ];
+}
+
+function payrollLogDetails(record: PayrollRecord | Omit<PayrollRecord, "id">, data: AppData) {
+  return [
+    `Employee: ${employeeName(data, record.employeeId)}`,
+    `Pay period: ${formatDate(record.payPeriodStart)} - ${formatDate(record.payPeriodEnd)}`,
+    `Days worked: ${record.daysWorked}`,
+    `Overtime hours: ${record.overtimeHours}`,
+    `Gross pay: ${formatCurrency(record.grossPay)}`,
+    `Deductions: ${formatCurrency(record.totalDeductions)}`,
+    `Net pay: ${formatCurrency(record.netPay)}`,
+  ];
+}
+
+function displayLogValue(value: unknown) {
+  if (value === undefined || value === null || value === "") return "N/A";
+  if (typeof value === "number") return Number.isFinite(value) ? String(value) : "N/A";
+  return String(value);
 }
 
 function patientName(data: AppData, id: number) {

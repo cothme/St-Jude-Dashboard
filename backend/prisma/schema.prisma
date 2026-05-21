@@ -102,6 +102,7 @@ model Employee {
   employeeCode    String          @unique
   firstName       String
   lastName        String
+  profileImageUrl String?
   position        String
   department      String
   email           String?
@@ -123,6 +124,7 @@ model Patient {
   id                     Int            @id @default(autoincrement())
   firstName              String
   lastName               String
+  profileImageUrl        String?
   dateOfBirth            DateTime
   sex                    Sex
   civilStatus            CivilStatus

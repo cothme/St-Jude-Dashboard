@@ -8,6 +8,7 @@ const router = Router();
 const patientSchema = z.object({
   firstName: z.string().min(1),
   lastName: z.string().min(1),
+  profileImageUrl: z.string().optional().nullable(),
   dateOfBirth: z.string(),
   sex: z.nativeEnum(Sex),
   civilStatus: z.nativeEnum(CivilStatus),

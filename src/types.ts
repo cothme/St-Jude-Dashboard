@@ -1,9 +1,10 @@
 export type Role = "Super admin" | "Staff" | "Doctor";
 
 export interface User {
-  id: number;
+  id: number | string;
   name: string;
   email: string;
+  profileImageUrl?: string;
   role: Role;
   status: "Active" | "Inactive";
   linkedEmployeeId?: number;
@@ -13,6 +14,7 @@ export interface Patient {
   id: number;
   firstName: string;
   lastName: string;
+  profileImageUrl?: string;
   dateOfBirth: string;
   sex: "Male" | "Female";
   civilStatus: "Single" | "Married" | "Widowed" | "Divorced";
@@ -51,6 +53,7 @@ export interface Employee {
   employeeCode: string;
   firstName: string;
   lastName: string;
+  profileImageUrl?: string;
   position: string;
   department: string;
   email: string;
@@ -92,6 +95,19 @@ export interface CareFormSubmission {
   fields: Record<string, string>;
 }
 
+export interface ActivityLog {
+  id: number;
+  actorId: number | string;
+  actorName: string;
+  actorRole: Role;
+  action: string;
+  entity: string;
+  summary: string;
+  details?: string[];
+  timestamp: string;
+  severity: "info" | "success" | "warning" | "danger";
+}
+
 export interface AppData {
   patients: Patient[];
   checkups: CheckupRecord[];
@@ -99,4 +115,5 @@ export interface AppData {
   payrollRecords: PayrollRecord[];
   users: User[];
   forms: CareFormSubmission[];
+  activityLogs: ActivityLog[];
 }
