@@ -418,6 +418,7 @@ function Layout() {
             <h1>Administrator Dashboard</h1>
           </div>
           <div className="topbar-actions">
+            <TopbarClock />
             <button className="theme-toggle" onClick={toggleTheme} aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}>
               {theme === "light" ? <Moon size={17} /> : <Sun size={17} />}
               <span>{theme === "light" ? "Dark" : "Light"}</span>
@@ -427,6 +428,22 @@ function Layout() {
         </header>
         <main><Outlet /></main>
       </div>
+    </div>
+  );
+}
+
+function TopbarClock() {
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  return (
+    <div className="topbar-clock" aria-label="Current time">
+      <strong>{now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</strong>
+      <span>{now.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" })}</span>
     </div>
   );
 }

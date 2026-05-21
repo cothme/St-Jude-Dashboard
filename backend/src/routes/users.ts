@@ -44,7 +44,7 @@ router.post("/", async (req, res) => {
     where: { email: input.email },
     data: {
       role: input.role,
-      image: input.profileImageUrl ?? null,
+      image: null,
       linkedEmployeeId: input.linkedEmployeeId ?? null,
       emailVerified: true,
     },
@@ -59,7 +59,6 @@ router.put("/:id", async (req, res) => {
     where: { id: req.params.id },
     data: {
       name: input.name,
-      image: input.profileImageUrl,
       role: input.role,
       linkedEmployeeId: input.linkedEmployeeId,
     },
