@@ -31,3 +31,19 @@ prisma migrate deploy && node dist/src/index.js
 ```
 
 That applies committed migrations before the app starts.
+
+## Create the First Super Admin
+
+After the first deploy, run this from your local backend folder with the Railway CLI:
+
+```bash
+railway run npm run seed:super-admin
+```
+
+Optional variables:
+
+```bash
+railway run --set "SUPER_ADMIN_EMAIL=admin@stjude.local" --set "SUPER_ADMIN_NAME=Maria Santos" --set "SUPER_ADMIN_PASSWORD=Password123!" npm run seed:super-admin
+```
+
+The script creates the user if missing. If the user already exists, it promotes and verifies the account without changing the password.
