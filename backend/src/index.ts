@@ -3,6 +3,8 @@ import cors from "cors";
 import express, { ErrorRequestHandler } from "express";
 import helmet from "helmet";
 import morgan from "morgan";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { toNodeHandler } from "better-auth/node";
 import { ZodError } from "zod";
 import { auth } from "./auth.js";
@@ -18,6 +20,7 @@ import patientRoutes from "./routes/patients.js";
 import payrollRoutes from "./routes/payroll.js";
 import userRoutes from "./routes/users.js";
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const authRateLimit = createRateLimiter({
 	windowMs: 15 * 60 * 1000,
@@ -62,6 +65,14 @@ app.use("/api/users", userRoutes);
 app.use("/api/activity-logs", activityLogRoutes);
 app.use("/api/medications", medicationRoutes);
 app.use("/api/appointments", appointmentRoutes);
+
+if (config.isProduction) {
+	const staticDir = path.resolve(__dirname, "../../public");
+	app.use(express.static(staticDir));
+	app.get(/^(?!\/api\/).*/, (_req, res) => {
+		res.sendFile(path.join(staticDir, "index.html"));
+	});
+}
 
 const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
 	if (error instanceof ZodError) {
