@@ -7,7 +7,7 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/src/index.js",
-    "start:prod": "npx prisma migrate deploy && npm run seed:super-admin && node dist/src/index.js",
+    "start:prod": "npx prisma migrate deploy && node dist/prisma/create-super-admin.js && node dist/src/index.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "seed": "tsx prisma/seed.ts",
