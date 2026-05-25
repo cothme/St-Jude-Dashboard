@@ -30,7 +30,7 @@ const bmi = (weight?: number | null, height?: number | null) => {
 
 router.use(requireAuth);
 
-router.get("/", async (_req, res) => {
+router.get("/", requireRole(Role.SUPER_ADMIN, Role.DOCTOR), async (_req, res) => {
   const checkups = await prisma.checkupRecord.findMany({
     include: { patient: true, doctor: true },
     orderBy: { checkupDate: "desc" },
@@ -38,7 +38,7 @@ router.get("/", async (_req, res) => {
   res.json({ data: checkups });
 });
 
-router.post("/", requireRole(Role.SUPER_ADMIN, Role.DOCTOR, Role.STAFF), async (req, res) => {
+router.post("/", requireRole(Role.SUPER_ADMIN, Role.DOCTOR), async (req, res) => {
   const input = checkupSchema.parse(req.body);
   const checkup = await prisma.checkupRecord.create({
     data: {
@@ -51,7 +51,7 @@ router.post("/", requireRole(Role.SUPER_ADMIN, Role.DOCTOR, Role.STAFF), async (
   res.status(201).json({ data: checkup });
 });
 
-router.put("/:id", requireRole(Role.SUPER_ADMIN, Role.DOCTOR, Role.STAFF), async (req, res) => {
+router.put("/:id", requireRole(Role.SUPER_ADMIN, Role.DOCTOR), async (req, res) => {
   const input = checkupSchema.parse(req.body);
   const checkup = await prisma.checkupRecord.update({
     where: { id: Number(req.params.id) },

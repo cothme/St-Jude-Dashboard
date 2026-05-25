@@ -23,7 +23,7 @@ const bulkSchema = payrollSchema.omit({ employeeId: true }).extend({
   employeeIds: z.array(z.number()).min(1),
 });
 
-router.use(requireAuth, requireRole(Role.SUPER_ADMIN));
+router.use(requireAuth, requireRole(Role.SUPER_ADMIN, Role.STAFF));
 
 router.get("/", async (_req, res) => {
   const records = await prisma.payrollRecord.findMany({
@@ -85,7 +85,7 @@ router.get("/:id/payslip", async (req, res) => {
   res.send(pdf);
 });
 
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", requireRole(Role.SUPER_ADMIN), async (req, res) => {
   await prisma.payrollRecord.delete({ where: { id: Number(req.params.id) } });
   res.status(204).send();
 });

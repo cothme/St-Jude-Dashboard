@@ -56,7 +56,7 @@ export const backendApi = {
   async loadAppData(): Promise<Partial<AppData>> {
     const [patients, checkups, employees, payrollRecords, forms, users, activityLogs, medicationSchedules, medicationAdministrations, appointments] = await Promise.all([
       apiFetch<{ data: any[] }>("/patients"),
-      apiFetch<{ data: any[] }>("/checkups"),
+      apiFetch<{ data: any[] }>("/checkups").catch(() => ({ data: [] })),
       apiFetch<{ data: any[] }>("/employees"),
       apiFetch<{ data: any[] }>("/payroll").catch(() => ({ data: [] })),
       apiFetch<{ data: any[] }>("/forms"),

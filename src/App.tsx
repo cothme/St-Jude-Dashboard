@@ -567,6 +567,8 @@ function Patients() {
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<Patient | Omit<Patient, "id"> | null>(null);
   const [error, setError] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(data.patients[0]?.id ?? null);
   const [viewingCheckup, setViewingCheckup] = useState<CheckupRecord | null>(null);
   const [sort, setSort] = useState<SortState<"name" | "age" | "status" | "ward" | "doctor">>({ key: "name", direction: "asc" });
@@ -585,6 +587,7 @@ function Patients() {
     event.preventDefault();
     if (!editing) return;
     setError("");
+    setIsSaving(true);
     try {
       const previous = "id" in editing ? data.patients.find((patient) => patient.id === editing.id) : undefined;
       if ("id" in editing) {
@@ -608,17 +611,26 @@ function Patients() {
       const message = err instanceof Error ? err.message : "Failed to save patient";
       setError(message);
       showToast(message, "error");
+    } finally {
+      setIsSaving(false);
     }
   };
 
   const removePatient = async (patient: Patient) => {
     if (!window.confirm(`Delete patient record for ${patient.firstName} ${patient.lastName}? This will also remove related mock checkup records.`)) return;
-    await backendApi.deletePatient(patient.id);
-    deletePatient(patient.id);
-    await refreshData();
-    logActivity({ action: "Deleted", entity: "Patient", summary: `Deleted patient record for ${patient.firstName} ${patient.lastName}.`, details: patientLogDetails(patient), severity: "danger" });
-    showToast("Patient record deleted", "success");
-    if (selectedId === patient.id) setSelectedId(data.patients.find((item) => item.id !== patient.id)?.id ?? null);
+    setDeletingId(patient.id);
+    try {
+      await backendApi.deletePatient(patient.id);
+      deletePatient(patient.id);
+      await refreshData();
+      logActivity({ action: "Deleted", entity: "Patient", summary: `Deleted patient record for ${patient.firstName} ${patient.lastName}.`, details: patientLogDetails(patient), severity: "danger" });
+      showToast("Patient record deleted", "success");
+      if (selectedId === patient.id) setSelectedId(data.patients.find((item) => item.id !== patient.id)?.id ?? null);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Failed to delete patient", "error");
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   return (
@@ -639,7 +651,7 @@ function Patients() {
                     <td>{doctorName(data, patient.attendingDoctorId)}</td>
                     <td className="actions">
                       {canManage && <button onClick={(event) => { event.stopPropagation(); setEditing(patient); }}>Edit</button>}
-                      {canManage && <button className="danger" onClick={(event) => { event.stopPropagation(); removePatient(patient); }}>Delete</button>}
+                      {canManage && <button className="danger" disabled={deletingId === patient.id} onClick={(event) => { event.stopPropagation(); removePatient(patient); }}>{deletingId === patient.id ? "Deleting..." : "Delete"}</button>}
                     </td>
                   </tr>
                 ))}
@@ -649,7 +661,7 @@ function Patients() {
         </section>
         {selected && <PatientDetail patient={selected} onViewCheckup={setViewingCheckup} />}
       </div>
-      {editing && <Modal title={"id" in editing ? "Edit Patient Record" : "Add Patient Record"} onClose={() => setEditing(null)}>{error && <p className="form-error">{error}</p>}<PatientForm patient={editing} doctors={doctors} onChange={setEditing} onSubmit={save} onCancel={() => setEditing(null)} /></Modal>}
+      {editing && <Modal title={"id" in editing ? "Edit Patient Record" : "Add Patient Record"} onClose={() => setEditing(null)}>{error && <p className="form-error">{error}</p>}<PatientForm patient={editing} doctors={doctors} isSaving={isSaving} onChange={setEditing} onSubmit={save} onCancel={() => setEditing(null)} /></Modal>}
       {viewingCheckup && <CheckupDetailModal checkup={viewingCheckup} onClose={() => setViewingCheckup(null)} />}
     </Page>
   );
@@ -696,7 +708,7 @@ function PatientDetail({ patient, onViewCheckup }: { patient: Patient; onViewChe
   );
 }
 
-function PatientForm({ patient, doctors, onChange, onSubmit, onCancel }: { patient: Patient | Omit<Patient, "id">; doctors: Employee[]; onChange: (patient: Patient | Omit<Patient, "id">) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onCancel: () => void }) {
+function PatientForm({ patient, doctors, isSaving, onChange, onSubmit, onCancel }: { patient: Patient | Omit<Patient, "id">; doctors: Employee[]; isSaving?: boolean; onChange: (patient: Patient | Omit<Patient, "id">) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onCancel: () => void }) {
   const set = (patch: Partial<Patient>) => onChange({ ...patient, ...patch });
   return (
     <form className="form-grid" onSubmit={onSubmit}>
@@ -715,7 +727,7 @@ function PatientForm({ patient, doctors, onChange, onSubmit, onCancel }: { patie
       <input placeholder="Emergency contact name" value={patient.emergencyContactName} onChange={(e) => set({ emergencyContactName: e.target.value })} />
       <input placeholder="Emergency contact number" value={patient.emergencyContactNumber} onChange={(e) => set({ emergencyContactNumber: e.target.value })} />
       <textarea required placeholder="Complete address" value={patient.address} onChange={(e) => set({ address: e.target.value })} />
-      <div className="form-actions"><button type="button" className="secondary-btn" onClick={onCancel}>Cancel</button><button className="primary-btn">Save Patient</button></div>
+      <div className="form-actions"><button type="button" className="secondary-btn" disabled={isSaving} onClick={onCancel}>Cancel</button><button className="primary-btn" disabled={isSaving}>{isSaving ? "Saving..." : "Save Patient"}</button></div>
     </form>
   );
 }
@@ -733,6 +745,8 @@ function Checkups() {
     ?? data.employees[0];
   const [editing, setEditing] = useState<CheckupRecord | Omit<CheckupRecord, "id" | "bmi"> | null>(null);
   const [viewing, setViewing] = useState<CheckupRecord | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
   const [patientId, setPatientId] = useState(data.patients[0]?.id ?? 1);
   const [checkupPage, setCheckupPage] = useState(1);
   const [checkupItemsPerPage, setCheckupItemsPerPage] = useState(6);
@@ -778,6 +792,7 @@ function Checkups() {
       showToast("Select a valid doctor before saving the checkup", "error");
       return;
     }
+    setIsSaving(true);
     try {
       const previous = "id" in editing ? data.checkups.find((checkup) => checkup.id === editing.id) : undefined;
       if ("id" in editing) {
@@ -799,11 +814,14 @@ function Checkups() {
       setEditing(null);
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Failed to save checkup record", "error");
+    } finally {
+      setIsSaving(false);
     }
   };
 
   const removeCheckup = async (checkup: CheckupRecord) => {
     if (!window.confirm(`Delete checkup record for ${patientName(data, checkup.patientId)}?`)) return;
+    setDeletingId(checkup.id);
     try {
       await backendApi.deleteCheckup(checkup.id);
       deleteCheckup(checkup.id);
@@ -812,6 +830,8 @@ function Checkups() {
       showToast("Checkup record deleted", "success");
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Failed to delete checkup record", "error");
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -839,7 +859,7 @@ function Checkups() {
           </select>
         </div>
         <div className="record-grid">
-          {checkupPageRecords.map((checkup) => <article className="record-card" key={checkup.id}><CheckupSummary checkup={checkup} /><p>{checkup.diagnosis || "No diagnosis entered"}</p><div className="actions"><button onClick={() => setViewing(checkup)}>View</button><button onClick={() => setEditing(checkup)}>Edit</button>{currentUser.role !== "Doctor" && <button className="danger" onClick={() => removeCheckup(checkup)}>Delete</button>}</div></article>)}
+          {checkupPageRecords.map((checkup) => <article className="record-card" key={checkup.id}><CheckupSummary checkup={checkup} /><p>{checkup.diagnosis || "No diagnosis entered"}</p><div className="actions"><button onClick={() => setViewing(checkup)}>View</button><button onClick={() => setEditing(checkup)}>Edit</button>{currentUser.role !== "Doctor" && <button className="danger" disabled={deletingId === checkup.id} onClick={() => removeCheckup(checkup)}>{deletingId === checkup.id ? "Deleting..." : "Delete"}</button>}</div></article>)}
         </div>
         {records.length > 0 ? (
           <PaginationControls page={checkupPage} totalPages={checkupTotalPages} totalItems={records.length} label="checkups" pageSize={checkupItemsPerPage} pageSizeOptions={[6, 12, 24]} onPageChange={setCheckupPage} onPageSizeChange={(size) => { setCheckupItemsPerPage(size); setCheckupPage(1); }} />
@@ -847,7 +867,7 @@ function Checkups() {
           <p className="section-note">No checkup records found.</p>
         )}
       </section>
-      {editing && <Modal title={"id" in editing ? "Edit Checkup" : currentUser.role === "Doctor" ? "Conduct Checkup" : "Add Checkup"} onClose={() => setEditing(null)}><CheckupForm checkup={editing} onChange={setEditing} onSubmit={save} /></Modal>}
+      {editing && <Modal title={"id" in editing ? "Edit Checkup" : currentUser.role === "Doctor" ? "Conduct Checkup" : "Add Checkup"} onClose={() => setEditing(null)}><CheckupForm checkup={editing} isSaving={isSaving} onChange={setEditing} onSubmit={save} /></Modal>}
       {viewing && <CheckupDetailModal checkup={viewing} onClose={() => setViewing(null)} />}
     </Page>
   );
@@ -918,7 +938,7 @@ function DoctorCheckupWorkspace({ doctor, patients, records, onStart, onEdit }: 
   );
 }
 
-function CheckupForm({ checkup, onChange, onSubmit }: { checkup: CheckupRecord | Omit<CheckupRecord, "id" | "bmi">; onChange: (checkup: CheckupRecord | Omit<CheckupRecord, "id" | "bmi">) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
+function CheckupForm({ checkup, isSaving, onChange, onSubmit }: { checkup: CheckupRecord | Omit<CheckupRecord, "id" | "bmi">; isSaving?: boolean; onChange: (checkup: CheckupRecord | Omit<CheckupRecord, "id" | "bmi">) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
   const { data } = useApp();
   const doctors = data.employees.filter((employee) => employee.position === "Psychiatrist");
   const set = (patch: Partial<CheckupRecord>) => onChange({ ...checkup, ...patch });
@@ -940,7 +960,7 @@ function CheckupForm({ checkup, onChange, onSubmit }: { checkup: CheckupRecord |
       <textarea placeholder="Diagnosis" value={checkup.diagnosis} onChange={(e) => set({ diagnosis: e.target.value })} />
       <textarea placeholder="Prescriptions" value={checkup.prescriptions} onChange={(e) => set({ prescriptions: e.target.value })} />
       <textarea placeholder="Notes" value={checkup.notes} onChange={(e) => set({ notes: e.target.value })} />
-      <div className="form-actions"><button className="primary-btn">Save Checkup</button></div>
+      <div className="form-actions"><button className="primary-btn" disabled={isSaving}>{isSaving ? "Saving..." : "Save Checkup"}</button></div>
     </form>
   );
 }
@@ -1329,6 +1349,8 @@ function Employees() {
   const { data, addEmployee, updateEmployee, deleteEmployee, refreshData, showToast, logActivity } = useApp();
   const [editing, setEditing] = useState<Employee | Omit<Employee, "id"> | null>(null);
   const [error, setError] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortState<"employee" | "position" | "department" | "salary" | "schedule" | "status">>({ key: "employee", direction: "asc" });
   const filtered = data.employees.filter((employee) => `${employee.firstName} ${employee.lastName} ${employee.position} ${employee.department}`.toLowerCase().includes(query.toLowerCase()));
@@ -1344,6 +1366,7 @@ function Employees() {
     event.preventDefault();
     if (!editing) return;
     setError("");
+    setIsSaving(true);
     try {
       const previous = "id" in editing ? data.employees.find((employee) => employee.id === editing.id) : undefined;
       if ("id" in editing) {
@@ -1367,29 +1390,38 @@ function Employees() {
       const message = err instanceof Error ? err.message : "Failed to save employee";
       setError(message);
       showToast(message, "error");
+    } finally {
+      setIsSaving(false);
     }
   };
 
   const removeEmployee = async (employee: Employee) => {
     if (!window.confirm(`Delete employee record for ${employee.firstName} ${employee.lastName}?`)) return;
-    await backendApi.deleteEmployee(employee.id);
-    deleteEmployee(employee.id);
-    await refreshData();
-    logActivity({ action: "Deleted", entity: "Employee", summary: `Deleted employee record for ${employee.firstName} ${employee.lastName}.`, details: employeeLogDetails(employee), severity: "danger" });
-    showToast("Employee record deleted", "success");
+    setDeletingId(employee.id);
+    try {
+      await backendApi.deleteEmployee(employee.id);
+      deleteEmployee(employee.id);
+      await refreshData();
+      logActivity({ action: "Deleted", entity: "Employee", summary: `Deleted employee record for ${employee.firstName} ${employee.lastName}.`, details: employeeLogDetails(employee), severity: "danger" });
+      showToast("Employee record deleted", "success");
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Failed to delete employee", "error");
+    } finally {
+      setDeletingId(null);
+    }
   };
   return (
     <Page title="Employee Management" action={<button className="primary-btn" onClick={() => setEditing({ employeeCode: "", firstName: "", lastName: "", profileImageUrl: "", position: "Care Staff", department: "Custodial Care", email: "", phone: "", hireDate: new Date().toISOString().slice(0, 10), baseSalary: 25000, workDaysPerWeek: 6, status: "Active" })}>Add Employee</button>}>
       <section className="panel">
         <SearchBox value={query} onChange={setQuery} placeholder="Search employees..." />
-        <div className="table-wrap"><table><thead><tr><SortableHeader label="Employee" sortKey="employee" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Position" sortKey="position" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Department" sortKey="department" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Salary" sortKey="salary" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Schedule" sortKey="schedule" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Status" sortKey="status" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><th></th></tr></thead><tbody>{sortedEmployees.map((employee) => <tr key={employee.id}><td><div className="identity-cell"><Avatar name={`${employee.firstName} ${employee.lastName}`} src={employee.profileImageUrl} /><span><strong>{employee.firstName} {employee.lastName}</strong><small>{employee.employeeCode}</small></span></div></td><td>{employee.position}</td><td>{employee.department}</td><td>{formatCurrency(employee.baseSalary)}</td><td>{employee.workDaysPerWeek}-day</td><td><Badge>{employee.status}</Badge></td><td className="actions"><button onClick={() => setEditing(employee)}>Edit</button><button className="danger" onClick={() => removeEmployee(employee)}>Delete</button></td></tr>)}</tbody></table></div>
+        <div className="table-wrap"><table><thead><tr><SortableHeader label="Employee" sortKey="employee" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Position" sortKey="position" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Department" sortKey="department" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Salary" sortKey="salary" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Schedule" sortKey="schedule" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Status" sortKey="status" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><th></th></tr></thead><tbody>{sortedEmployees.map((employee) => <tr key={employee.id}><td><div className="identity-cell"><Avatar name={`${employee.firstName} ${employee.lastName}`} src={employee.profileImageUrl} /><span><strong>{employee.firstName} {employee.lastName}</strong><small>{employee.employeeCode}</small></span></div></td><td>{employee.position}</td><td>{employee.department}</td><td>{formatCurrency(employee.baseSalary)}</td><td>{employee.workDaysPerWeek}-day</td><td><Badge>{employee.status}</Badge></td><td className="actions"><button onClick={() => setEditing(employee)}>Edit</button><button className="danger" disabled={deletingId === employee.id} onClick={() => removeEmployee(employee)}>{deletingId === employee.id ? "Deleting..." : "Delete"}</button></td></tr>)}</tbody></table></div>
       </section>
-      {editing && <Modal title={"id" in editing ? "Edit Employee Record" : "Add Employee Record"} onClose={() => setEditing(null)}>{error && <p className="form-error">{error}</p>}<EmployeeForm employee={editing} onChange={setEditing} onSubmit={save} onCancel={() => setEditing(null)} /></Modal>}
+      {editing && <Modal title={"id" in editing ? "Edit Employee Record" : "Add Employee Record"} onClose={() => setEditing(null)}>{error && <p className="form-error">{error}</p>}<EmployeeForm employee={editing} isSaving={isSaving} onChange={setEditing} onSubmit={save} onCancel={() => setEditing(null)} /></Modal>}
     </Page>
   );
 }
 
-function EmployeeForm({ employee, onChange, onSubmit, onCancel }: { employee: Employee | Omit<Employee, "id">; onChange: (employee: Employee | Omit<Employee, "id">) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onCancel: () => void }) {
+function EmployeeForm({ employee, isSaving, onChange, onSubmit, onCancel }: { employee: Employee | Omit<Employee, "id">; isSaving?: boolean; onChange: (employee: Employee | Omit<Employee, "id">) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onCancel: () => void }) {
   const set = (patch: Partial<Employee>) => onChange({ ...employee, ...patch });
   return (
     <form className="form-grid" onSubmit={onSubmit}>
@@ -1405,13 +1437,13 @@ function EmployeeForm({ employee, onChange, onSubmit, onCancel }: { employee: Em
       <input required type="number" min={0} value={employee.baseSalary} onChange={(e) => set({ baseSalary: Number(e.target.value) })} />
       <select value={employee.workDaysPerWeek} onChange={(e) => set({ workDaysPerWeek: Number(e.target.value) as 5 | 6 })}><option value={5}>5-day schedule</option><option value={6}>6-day schedule</option></select>
       <select value={employee.status} onChange={(e) => set({ status: e.target.value as Employee["status"] })}><option>Active</option><option>Inactive</option></select>
-      <div className="form-actions"><button type="button" className="secondary-btn" onClick={onCancel}>Cancel</button><button className="primary-btn">Save Employee</button></div>
+      <div className="form-actions"><button type="button" className="secondary-btn" disabled={isSaving} onClick={onCancel}>Cancel</button><button className="primary-btn" disabled={isSaving}>{isSaving ? "Saving..." : "Save Employee"}</button></div>
     </form>
   );
 }
 
 function Payroll() {
-  const { data, addPayroll, refreshData, showToast, logActivity } = useApp();
+  const { data, currentUser, addPayroll, refreshData, showToast, logActivity } = useApp();
   const activeEmployees = useMemo(() => data.employees.filter((item) => item.status === "Active"), [data.employees]);
   const [mode, setMode] = useState<"single" | "bulk">("single");
   const [employeeId, setEmployeeId] = useState(data.employees[0]?.id ?? 1);
@@ -1429,6 +1461,7 @@ function Payroll() {
   const [includePagibig, setIncludePagibig] = useState(true);
   const [periodStart, setPeriodStart] = useState("2026-05-01");
   const [periodEnd, setPeriodEnd] = useState("2026-05-15");
+  const [payrollAction, setPayrollAction] = useState<"single" | "bulk" | "export" | "delete" | null>(null);
   useEffect(() => {
     if (data.employees.length === 0) return;
     if (!data.employees.some((item) => item.id === employeeId)) {
@@ -1488,22 +1521,36 @@ function Payroll() {
       return;
     }
     const record = createPayrollRecord(employee);
-    await backendApi.createPayroll(record);
-    addPayroll(record);
-    await refreshData();
-    logActivity({ action: "Created", entity: "Payroll", summary: `Created payroll record for ${employeeName(data, employee.id)}.`, details: payrollLogDetails(record, data), severity: "success" });
-    showToast("Payroll record saved", "success");
+    setPayrollAction("single");
+    try {
+      await backendApi.createPayroll(record);
+      addPayroll(record);
+      await refreshData();
+      logActivity({ action: "Created", entity: "Payroll", summary: `Created payroll record for ${employeeName(data, employee.id)}.`, details: payrollLogDetails(record, data), severity: "success" });
+      showToast("Payroll record saved", "success");
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Failed to save payroll record", "error");
+    } finally {
+      setPayrollAction(null);
+    }
   };
   const saveBulkPayroll = async () => {
     if (selectedEmployeeIds.length === 0) {
       showToast("Select at least one employee for bulk payroll", "error");
       return;
     }
-    await backendApi.createBulkPayroll(bulkPreview);
-    bulkPreview.forEach((record) => addPayroll(record));
-    await refreshData();
-    logActivity({ action: "Bulk created", entity: "Payroll", summary: `Created ${bulkPreview.length} payroll records in bulk.`, details: bulkPreview.flatMap((record) => payrollLogDetails(record, data)).slice(0, 24), severity: "success" });
-    showToast(`${bulkPreview.length} payroll records created`, "success");
+    setPayrollAction("bulk");
+    try {
+      await backendApi.createBulkPayroll(bulkPreview);
+      bulkPreview.forEach((record) => addPayroll(record));
+      await refreshData();
+      logActivity({ action: "Bulk created", entity: "Payroll", summary: `Created ${bulkPreview.length} payroll records in bulk.`, details: bulkPreview.flatMap((record) => payrollLogDetails(record, data)).slice(0, 24), severity: "success" });
+      showToast(`${bulkPreview.length} payroll records created`, "success");
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Failed to create bulk payroll", "error");
+    } finally {
+      setPayrollAction(null);
+    }
   };
   const exportPayslip = (record: PayrollRecord) => {
     window.open(backendApi.payslipUrl(record.id), "_blank", "noopener,noreferrer");
@@ -1513,35 +1560,46 @@ function Payroll() {
       showToast("Select at least one payroll record to export", "error");
       return;
     }
-    const response = await fetch(backendApi.bulkPayslipUrl(), {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids: selectedPayrollIds }),
-    });
-    if (!response.ok) {
-      showToast("Failed to export selected payslips", "error");
-      return;
+    setPayrollAction("export");
+    try {
+      const response = await fetch(backendApi.bulkPayslipUrl(), {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: selectedPayrollIds }),
+      });
+      if (!response.ok) throw new Error("Failed to export selected payslips");
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `payslips-bulk-${new Date().toISOString().slice(0, 10)}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      logActivity({ action: "Exported", entity: "Payslip", summary: `Exported ${selectedPayrollIds.length} payslips as PDF.`, severity: "info" });
+      showToast(`Exported ${selectedPayrollIds.length} payslips as PDF`, "success");
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Failed to export selected payslips", "error");
+    } finally {
+      setPayrollAction(null);
     }
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `payslips-bulk-${new Date().toISOString().slice(0, 10)}.pdf`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
-    logActivity({ action: "Exported", entity: "Payslip", summary: `Exported ${selectedPayrollIds.length} payslips as PDF.`, severity: "info" });
-    showToast(`Exported ${selectedPayrollIds.length} payslips as PDF`, "success");
   };
   const deletePayroll = async (record: PayrollRecord) => {
     if (!window.confirm(`Delete payroll for ${employeeName(data, record.employeeId)}?`)) return;
-    await backendApi.deletePayroll(record.id);
-    await refreshData();
-    setSelectedPayrollIds((current) => current.filter((id) => id !== record.id));
-    logActivity({ action: "Deleted", entity: "Payroll", summary: `Deleted payroll record for ${employeeName(data, record.employeeId)}.`, details: payrollLogDetails(record, data), severity: "danger" });
-    showToast("Payroll record deleted", "success");
+    setPayrollAction("delete");
+    try {
+      await backendApi.deletePayroll(record.id);
+      await refreshData();
+      setSelectedPayrollIds((current) => current.filter((id) => id !== record.id));
+      logActivity({ action: "Deleted", entity: "Payroll", summary: `Deleted payroll record for ${employeeName(data, record.employeeId)}.`, details: payrollLogDetails(record, data), severity: "danger" });
+      showToast("Payroll record deleted", "success");
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Failed to delete payroll record", "error");
+    } finally {
+      setPayrollAction(null);
+    }
   };
   return (
     <Page title="Payroll">
@@ -1592,7 +1650,7 @@ function Payroll() {
             </div>
           )}
           <div className="payroll-preview"><p><span>{mode === "bulk" ? "Batch gross pay" : "Gross pay"}</span><strong>{formatCurrency(mode === "bulk" ? bulkGross : previewRecord?.grossPay ?? 0)}</strong></p><p><span>{mode === "bulk" ? "Batch deductions" : "Total deductions"}</span><strong>{formatCurrency(mode === "bulk" ? bulkDeductions : previewRecord?.totalDeductions ?? 0)}</strong></p><p><span>{mode === "bulk" ? "Batch net pay" : "Net pay"}</span><strong>{formatCurrency(mode === "bulk" ? bulkNet : previewRecord?.netPay ?? 0)}</strong></p></div>
-          <button className="primary-btn" disabled={mode === "bulk" ? selectedEmployeeIds.length === 0 : !employee} onClick={mode === "bulk" ? saveBulkPayroll : savePayroll}>{mode === "bulk" ? `Create ${selectedEmployeeIds.length} Payroll Records` : "Save Payroll Record"}</button>
+          <button className="primary-btn" disabled={Boolean(payrollAction) || (mode === "bulk" ? selectedEmployeeIds.length === 0 : !employee)} onClick={mode === "bulk" ? saveBulkPayroll : savePayroll}>{payrollAction === "single" || payrollAction === "bulk" ? "Saving..." : mode === "bulk" ? `Create ${selectedEmployeeIds.length} Payroll Records` : "Save Payroll Record"}</button>
           {data.employees.length === 0 && <p className="section-note">Add an employee before creating payroll records.</p>}
         </section>
         <section className="panel">
@@ -1601,7 +1659,7 @@ function Payroll() {
               <h2>Payroll Records</h2>
               <p className="section-note">Review all payroll runs or filter by employee.</p>
             </div>
-            <button className="secondary-btn" onClick={bulkExportPayslips}>Bulk Export Payslips</button>
+            <button className="secondary-btn" disabled={payrollAction === "export"} onClick={bulkExportPayslips}>{payrollAction === "export" ? "Exporting..." : "Bulk Export Payslips"}</button>
           </div>
           <select value={historyEmployeeId} onChange={(event) => { setHistoryEmployeeId(event.target.value === "all" ? "all" : Number(event.target.value)); setPayrollPage(1); }}>
             <option value="all">All employees</option>
@@ -1629,7 +1687,7 @@ function Payroll() {
                     <td>{formatCurrency(record.grossPay)}</td>
                     <td>{formatCurrency(record.totalDeductions)}</td>
                     <td><strong>{formatCurrency(record.netPay)}</strong></td>
-                    <td><div className="actions"><button className="secondary-btn" onClick={() => exportPayslip(record)}>Export PDF</button><button className="danger" onClick={() => deletePayroll(record)}>Delete</button></div></td>
+                    <td><div className="actions"><button className="secondary-btn" onClick={() => exportPayslip(record)}>Export PDF</button>{currentUser.role === "Super admin" && <button className="danger" disabled={payrollAction === "delete"} onClick={() => deletePayroll(record)}>{payrollAction === "delete" ? "Deleting..." : "Delete"}</button>}</div></td>
                   </tr>
                 ))}
               </tbody>
@@ -1731,6 +1789,8 @@ function UsersPage() {
   const { data, currentUser, addUser, updateUser, deleteUser, refreshData, showToast, logActivity } = useApp();
   const [editing, setEditing] = useState<UserEditor | null>(null);
   const [error, setError] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | string | null>(null);
   const [sort, setSort] = useState<SortState<"name" | "email" | "role" | "status">>({ key: "name", direction: "asc" });
   const sortedUsers = sortItems(data.users, sort, {
     name: (user) => user.name,
@@ -1742,6 +1802,7 @@ function UsersPage() {
     event.preventDefault();
     if (!editing) return;
     setError("");
+    setIsSaving(true);
     try {
       const previous = "id" in editing ? data.users.find((user) => user.id === editing.id) : undefined;
       if ("id" in editing) {
@@ -1765,6 +1826,8 @@ function UsersPage() {
       const message = err instanceof Error ? err.message : "Failed to save user";
       setError(message);
       showToast(message, "error");
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -1778,22 +1841,29 @@ function UsersPage() {
       return;
     }
     if (!window.confirm(`Delete user account for ${user.name}?`)) return;
-    await backendApi.deleteUser(user.id);
-    deleteUser(user.id);
-    await refreshData();
-    logActivity({ action: "Deleted", entity: "User", summary: `Deleted user account for ${user.name}.`, details: userLogDetails(user), severity: "danger" });
-    showToast("User account deleted", "success");
+    setDeletingId(user.id);
+    try {
+      await backendApi.deleteUser(user.id);
+      deleteUser(user.id);
+      await refreshData();
+      logActivity({ action: "Deleted", entity: "User", summary: `Deleted user account for ${user.name}.`, details: userLogDetails(user), severity: "danger" });
+      showToast("User account deleted", "success");
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Failed to delete user", "error");
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   return (
     <Page title="Users and Roles" action={<button className="primary-btn" onClick={() => setEditing({ name: "", email: "", profileImageUrl: "", role: "Staff", status: "Active", password: "" })}>Add User</button>}>
-      <section className="panel"><div className="table-wrap"><table><thead><tr><SortableHeader label="Name" sortKey="name" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Email" sortKey="email" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Role" sortKey="role" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Status" sortKey="status" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><th></th></tr></thead><tbody>{sortedUsers.map((user) => <tr key={user.id}><td><div className="identity-cell"><Avatar name={user.name} src={user.profileImageUrl} /><strong>{user.name}</strong></div></td><td>{user.email}</td><td><Badge>{user.role}</Badge></td><td>{user.status}</td><td className="actions"><button onClick={() => setEditing(user)}>Edit</button><button className="danger" disabled={user.role === "Super admin"} onClick={() => removeUser(user)}>Delete</button></td></tr>)}</tbody></table></div></section>
-      {editing && <Modal title={"id" in editing ? "Edit User Account" : "Add User Account"} onClose={() => setEditing(null)}>{error && <p className="form-error">{error}</p>}<UserForm user={editing} employees={data.employees} onChange={setEditing} onSubmit={save} onCancel={() => setEditing(null)} /></Modal>}
+      <section className="panel"><div className="table-wrap"><table><thead><tr><SortableHeader label="Name" sortKey="name" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Email" sortKey="email" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Role" sortKey="role" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Status" sortKey="status" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><th></th></tr></thead><tbody>{sortedUsers.map((user) => <tr key={user.id}><td><div className="identity-cell"><Avatar name={user.name} src={user.profileImageUrl} /><strong>{user.name}</strong></div></td><td>{user.email}</td><td><Badge>{user.role}</Badge></td><td>{user.status}</td><td className="actions"><button onClick={() => setEditing(user)}>Edit</button><button className="danger" disabled={user.role === "Super admin" || deletingId === user.id} onClick={() => removeUser(user)}>{deletingId === user.id ? "Deleting..." : "Delete"}</button></td></tr>)}</tbody></table></div></section>
+      {editing && <Modal title={"id" in editing ? "Edit User Account" : "Add User Account"} onClose={() => setEditing(null)}>{error && <p className="form-error">{error}</p>}<UserForm user={editing} employees={data.employees} isSaving={isSaving} onChange={setEditing} onSubmit={save} onCancel={() => setEditing(null)} /></Modal>}
     </Page>
   );
 }
 
-function UserForm({ user, employees, onChange, onSubmit, onCancel }: { user: UserEditor; employees: Employee[]; onChange: (user: UserEditor) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onCancel: () => void }) {
+function UserForm({ user, employees, isSaving, onChange, onSubmit, onCancel }: { user: UserEditor; employees: Employee[]; isSaving?: boolean; onChange: (user: UserEditor) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onCancel: () => void }) {
   const isNew = !("id" in user);
   const isSuperAdmin = user.role === "Super admin";
   const set = (patch: Partial<UserEditor>) => onChange({ ...user, ...patch });
@@ -1809,7 +1879,7 @@ function UserForm({ user, employees, onChange, onSubmit, onCancel }: { user: Use
         <option value="">No linked employee</option>
         {employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.firstName} {employee.lastName} - {employee.position}</option>)}
       </select>
-      <div className="form-actions"><button type="button" className="secondary-btn" onClick={onCancel}>Cancel</button><button className="primary-btn">Save User</button></div>
+      <div className="form-actions"><button type="button" className="secondary-btn" disabled={isSaving} onClick={onCancel}>Cancel</button><button className="primary-btn" disabled={isSaving}>{isSaving ? "Saving..." : "Save User"}</button></div>
     </form>
   );
 }
