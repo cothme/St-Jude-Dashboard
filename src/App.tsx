@@ -737,7 +737,7 @@ function Checkups() {
   const [checkupPage, setCheckupPage] = useState(1);
   const [checkupItemsPerPage, setCheckupItemsPerPage] = useState(6);
   const records = data.checkups
-    .filter((record) => currentUser.role === "Doctor" ? record.doctorId === doctorEmployee.id : true)
+    .filter((record) => currentUser.role === "Doctor" ? Boolean(doctorEmployee) && record.doctorId === doctorEmployee.id : true)
     .sort((a, b) => new Date(b.checkupDate).getTime() - new Date(a.checkupDate).getTime());
   const checkupTotalPages = Math.max(1, Math.ceil(records.length / checkupItemsPerPage));
   const checkupPageRecords = records.slice((checkupPage - 1) * checkupItemsPerPage, checkupPage * checkupItemsPerPage);
@@ -745,50 +745,101 @@ function Checkups() {
   useEffect(() => {
     setCheckupPage(1);
   }, [currentUser.role, records.length]);
+  useEffect(() => {
+    if (data.patients.length === 0) return;
+    if (!data.patients.some((patient) => patient.id === patientId)) {
+      setPatientId(data.patients[0].id);
+    }
+  }, [data.patients, patientId]);
+
+  const startCheckup = (selectedPatientId = patientId) => {
+    if (data.patients.length === 0 || !data.patients.some((patient) => patient.id === selectedPatientId)) {
+      showToast("Select or add a patient before creating a checkup", "error");
+      return;
+    }
+    if (!doctorEmployee) {
+      showToast("Add or assign a doctor before creating a checkup", "error");
+      return;
+    }
+    setEditing(emptyCheckup(selectedPatientId, doctorEmployee.id));
+  };
 
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!editing) return;
-    const previous = "id" in editing ? data.checkups.find((checkup) => checkup.id === editing.id) : undefined;
-    if ("id" in editing) {
-      await backendApi.updateCheckup(editing);
-      updateCheckup(editing);
-    } else {
-      await backendApi.createCheckup(editing);
-      addCheckup(editing);
+    if (!editing) {
+      showToast("No checkup record is open", "error");
+      return;
     }
-    await refreshData();
-    logActivity({
-      action: "Saved",
-      entity: "Checkup",
-      summary: `${"id" in editing ? "Updated" : "Created"} checkup record for ${patientName(data, editing.patientId)}.`,
-      details: checkupLogDetails(editing, data, previous),
-      severity: "success",
-    });
-    showToast("Checkup record saved", "success");
-    setEditing(null);
+    if (!data.patients.some((patient) => patient.id === editing.patientId)) {
+      showToast("Select a valid patient before saving the checkup", "error");
+      return;
+    }
+    if (!data.employees.some((employee) => employee.id === editing.doctorId)) {
+      showToast("Select a valid doctor before saving the checkup", "error");
+      return;
+    }
+    try {
+      const previous = "id" in editing ? data.checkups.find((checkup) => checkup.id === editing.id) : undefined;
+      if ("id" in editing) {
+        await backendApi.updateCheckup(editing);
+        updateCheckup(editing);
+      } else {
+        await backendApi.createCheckup(editing);
+        addCheckup(editing);
+      }
+      await refreshData();
+      logActivity({
+        action: "Saved",
+        entity: "Checkup",
+        summary: `${"id" in editing ? "Updated" : "Created"} checkup record for ${patientName(data, editing.patientId)}.`,
+        details: checkupLogDetails(editing, data, previous),
+        severity: "success",
+      });
+      showToast("Checkup record saved", "success");
+      setEditing(null);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Failed to save checkup record", "error");
+    }
   };
+
+  const removeCheckup = async (checkup: CheckupRecord) => {
+    if (!window.confirm(`Delete checkup record for ${patientName(data, checkup.patientId)}?`)) return;
+    try {
+      await backendApi.deleteCheckup(checkup.id);
+      deleteCheckup(checkup.id);
+      await refreshData();
+      logActivity({ action: "Deleted", entity: "Checkup", summary: `Deleted checkup record for ${patientName(data, checkup.patientId)}.`, details: checkupLogDetails(checkup, data), severity: "danger" });
+      showToast("Checkup record deleted", "success");
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Failed to delete checkup record", "error");
+    }
+  };
+
   return (
-    <Page title={currentUser.role === "Doctor" ? "Conduct Checkups" : "Checkup Records"} action={<button className="primary-btn" onClick={() => setEditing(emptyCheckup(patientId, doctorEmployee.id))}>{currentUser.role === "Doctor" ? "Start Checkup" : "Add Checkup"}</button>}>
-      {currentUser.role === "Doctor" && (
+    <Page title={currentUser.role === "Doctor" ? "Conduct Checkups" : "Checkup Records"} action={<button className="primary-btn" onClick={() => startCheckup()}>{currentUser.role === "Doctor" ? "Start Checkup" : "Add Checkup"}</button>}>
+      {currentUser.role === "Doctor" && doctorEmployee && (
         <DoctorCheckupWorkspace
           doctor={doctorEmployee}
           patients={data.patients}
           records={records}
-          onStart={(selectedPatientId) => setEditing(emptyCheckup(selectedPatientId, doctorEmployee.id))}
+          onStart={startCheckup}
           onEdit={setEditing}
         />
       )}
+      {currentUser.role === "Doctor" && !doctorEmployee && <section className="panel"><p className="section-note">Your user account is not linked to a doctor profile yet.</p></section>}
       <section className="panel">
         <div className="checkup-list-header">
           <div>
             <h2>{currentUser.role === "Doctor" ? "My Recent Checkups" : "Checkup List"}</h2>
             <p className="section-note">Newest clinical records are shown first.</p>
           </div>
-          <select value={patientId} onChange={(e) => setPatientId(Number(e.target.value))}>{data.patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.firstName} {patient.lastName}</option>)}</select>
+          <select value={data.patients.some((patient) => patient.id === patientId) ? patientId : ""} disabled={data.patients.length === 0} onChange={(e) => setPatientId(Number(e.target.value))}>
+            {data.patients.length === 0 && <option value="">No patients available</option>}
+            {data.patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.firstName} {patient.lastName}</option>)}
+          </select>
         </div>
         <div className="record-grid">
-          {checkupPageRecords.map((checkup) => <article className="record-card" key={checkup.id}><CheckupSummary checkup={checkup} /><p>{checkup.diagnosis || "No diagnosis entered"}</p><div className="actions"><button onClick={() => setViewing(checkup)}>View</button><button onClick={() => setEditing(checkup)}>Edit</button>{currentUser.role !== "Doctor" && <button className="danger" onClick={async () => { await backendApi.deleteCheckup(checkup.id); deleteCheckup(checkup.id); await refreshData(); logActivity({ action: "Deleted", entity: "Checkup", summary: `Deleted checkup record for ${patientName(data, checkup.patientId)}.`, details: checkupLogDetails(checkup, data), severity: "danger" }); showToast("Checkup record deleted", "success"); }}>Delete</button>}</div></article>)}
+          {checkupPageRecords.map((checkup) => <article className="record-card" key={checkup.id}><CheckupSummary checkup={checkup} /><p>{checkup.diagnosis || "No diagnosis entered"}</p><div className="actions"><button onClick={() => setViewing(checkup)}>View</button><button onClick={() => setEditing(checkup)}>Edit</button>{currentUser.role !== "Doctor" && <button className="danger" onClick={() => removeCheckup(checkup)}>Delete</button>}</div></article>)}
         </div>
         {records.length > 0 ? (
           <PaginationControls page={checkupPage} totalPages={checkupTotalPages} totalItems={records.length} label="checkups" pageSize={checkupItemsPerPage} pageSizeOptions={[6, 12, 24]} onPageChange={setCheckupPage} onPageSizeChange={(size) => { setCheckupItemsPerPage(size); setCheckupPage(1); }} />
@@ -1170,7 +1221,10 @@ function FormsPage() {
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!selected) return;
+    if (!selected) {
+      showToast("Select a form template before submitting", "error");
+      return;
+    }
     const submission = {
       templateId: selected.id,
       title: selected.title,
@@ -1178,17 +1232,22 @@ function FormsPage() {
       status: "Submitted",
       fields,
     } as const;
-    await fetch("http://localhost:3001/api/forms", {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...submission, status: "SUBMITTED" }),
-    });
-    addFormSubmission(submission);
-    await refreshData();
+    try {
+      const response = await fetch("http://localhost:3001/api/forms", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...submission, status: "SUBMITTED" }),
+      });
+      if (!response.ok) throw new Error("Failed to submit form");
+      addFormSubmission(submission);
+      await refreshData();
       logActivity({ action: "Submitted", entity: "Form", summary: `Submitted ${selected.title}.`, details: [`Template: ${selected.title}`, `Category: ${selected.category}`, ...Object.entries(fields).map(([key, value]) => `${key}: ${value || "N/A"}`)], severity: "success" });
-    showToast("Form submitted", "success");
-    setFields({});
+      showToast("Form submitted", "success");
+      setFields({});
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Failed to submit form", "error");
+    }
   };
 
   return (
@@ -1437,7 +1496,7 @@ function Payroll() {
   };
   const saveBulkPayroll = async () => {
     if (selectedEmployeeIds.length === 0) {
-      window.alert("Select at least one employee for bulk payroll.");
+      showToast("Select at least one employee for bulk payroll", "error");
       return;
     }
     await backendApi.createBulkPayroll(bulkPreview);
@@ -1711,7 +1770,7 @@ function UsersPage() {
 
   const removeUser = async (user: User) => {
     if (user.id === currentUser.id) {
-      window.alert("You cannot delete the currently signed-in demo user.");
+      showToast("You cannot delete the currently signed-in user", "error");
       return;
     }
     if (!window.confirm(`Delete user account for ${user.name}?`)) return;
