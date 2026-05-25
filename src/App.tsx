@@ -1,8 +1,10 @@
 import {
   Activity,
+  ArrowUpDown,
   Banknote,
   CalendarClock,
   ClipboardPlus,
+  ClipboardList,
   FileText,
   Home,
   LogOut,
@@ -10,6 +12,7 @@ import {
   Moon,
   Search,
   Shield,
+  Syringe,
   Sun,
   Users,
   UserRoundCog,
@@ -21,9 +24,14 @@ import { canAccess } from "./auth";
 import { initialData } from "./data/mockData";
 import { backendApi, backendAuth } from "./services/apiClient";
 import { authService, employeeService, patientService } from "./services/mockServices";
-import { ActivityLog, AppData, CareFormSubmission, CheckupRecord, Employee, FormCategory, Patient, PayrollRecord, Role, User } from "./types";
+import { ActivityLog, AppData, Appointment, CareFormSubmission, CheckupRecord, Employee, FormCategory, MedicationAdministration, MedicationSchedule, Patient, PayrollRecord, Role, User } from "./types";
 import { ageFromBirthDate, calculateBmi, formatCurrency, formatDate, nextId } from "./utils";
 import stJudeLogo from "./assets/stjude-logo.png";
+
+type UserEditor = User | (Omit<User, "id"> & { password?: string });
+type SortDirection = "asc" | "desc";
+type SortState<K extends string> = { key: K; direction: SortDirection };
+type SortValue = string | number | Date | null | undefined;
 
 interface AppContextValue {
   data: AppData;
@@ -52,6 +60,13 @@ interface AppContextValue {
   addUser: (user: Omit<User, "id">) => void;
   updateUser: (user: User) => void;
   deleteUser: (id: number | string) => void;
+  addMedicationSchedule: (schedule: Omit<MedicationSchedule, "id">) => void;
+  updateMedicationSchedule: (schedule: MedicationSchedule) => void;
+  deleteMedicationSchedule: (id: number) => void;
+  addMedicationAdministration: (record: Omit<MedicationAdministration, "id">) => void;
+  addAppointment: (appointment: Omit<Appointment, "id">) => void;
+  updateAppointment: (appointment: Appointment) => void;
+  deleteAppointment: (id: number) => void;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -62,10 +77,7 @@ const useApp = () => {
 };
 
 function AppProvider({ children }: { children: ReactNode }) {
-  const [data, setData] = useState<AppData>(() => ({
-    ...initialData,
-    activityLogs: loadStoredActivityLogs(initialData.activityLogs),
-  }));
+  const [data, setData] = useState<AppData>(initialData);
   const [currentUserId, setCurrentUserId] = useState<number | string>(1);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
@@ -89,6 +101,7 @@ function AppProvider({ children }: { children: ReactNode }) {
       };
       return { ...current, activityLogs: [log, ...current.activityLogs].slice(0, 250) };
     });
+    backendApi.createActivityLog(activity).catch(() => undefined);
   }, [currentUserId]);
 
   const showToast = useCallback((message: string, type: "success" | "error" | "info" = "info") => {
@@ -143,6 +156,7 @@ function AppProvider({ children }: { children: ReactNode }) {
           severity: "info",
         } satisfies ActivityLog, ...current.activityLogs].slice(0, 250),
       }));
+      backendApi.createActivityLog({ action: "Signed in", entity: "Session", summary: `${signedInUser.name} signed in as ${signedInUser.role}.`, severity: "info" }).catch(() => undefined);
       showToast(`Welcome back, ${signedInUser.name}`, "success");
     }
     await refreshData();
@@ -205,10 +219,6 @@ function AppProvider({ children }: { children: ReactNode }) {
     localStorage.setItem("stjude-theme", theme);
   }, [theme]);
 
-  useEffect(() => {
-    localStorage.setItem("stjude-activity-logs", JSON.stringify(data.activityLogs.slice(0, 250)));
-  }, [data.activityLogs]);
-
   const value = useMemo<AppContextValue>(() => ({
     data,
     currentUser,
@@ -239,6 +249,13 @@ function AppProvider({ children }: { children: ReactNode }) {
     addUser: (user) => setData((prev) => ({ ...prev, users: [...prev.users, { ...user, id: `local-${Date.now()}` }] })),
     updateUser: (user) => setData((prev) => ({ ...prev, users: prev.users.map((item) => item.id === user.id ? user : item) })),
     deleteUser: (id) => setData((prev) => ({ ...prev, users: prev.users.filter((item) => item.id !== id) })),
+    addMedicationSchedule: (schedule) => setData((prev) => ({ ...prev, medicationSchedules: [{ ...schedule, id: nextId(prev.medicationSchedules) }, ...prev.medicationSchedules] })),
+    updateMedicationSchedule: (schedule) => setData((prev) => ({ ...prev, medicationSchedules: prev.medicationSchedules.map((item) => item.id === schedule.id ? schedule : item) })),
+    deleteMedicationSchedule: (id) => setData((prev) => ({ ...prev, medicationSchedules: prev.medicationSchedules.filter((item) => item.id !== id) })),
+    addMedicationAdministration: (record) => setData((prev) => ({ ...prev, medicationAdministrations: [{ ...record, id: nextId(prev.medicationAdministrations) }, ...prev.medicationAdministrations] })),
+    addAppointment: (appointment) => setData((prev) => ({ ...prev, appointments: [{ ...appointment, id: nextId(prev.appointments) }, ...prev.appointments] })),
+    updateAppointment: (appointment) => setData((prev) => ({ ...prev, appointments: prev.appointments.map((item) => item.id === appointment.id ? appointment : item) })),
+    deleteAppointment: (id) => setData((prev) => ({ ...prev, appointments: prev.appointments.filter((item) => item.id !== id) })),
   }), [data, currentUser, theme, isAuthenticated, authLoading, showToast, logActivity]);
 
   return <AppContext.Provider value={value}>{children}<ToastViewport toasts={toasts} onDismiss={(id) => setToasts((current) => current.filter((toast) => toast.id !== id))} /></AppContext.Provider>;
@@ -262,19 +279,12 @@ function sessionRoleToUi(role: string | undefined): Role {
   return "Staff";
 }
 
-function loadStoredActivityLogs(fallback: ActivityLog[]) {
-  try {
-    const parsed = JSON.parse(localStorage.getItem("stjude-activity-logs") ?? "[]") as ActivityLog[];
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
 const navItems = [
   { to: "/", label: "Dashboard", permission: "dashboard", icon: Home },
   { to: "/patients", label: "Patients", permission: "patients", icon: Users },
   { to: "/checkups", label: "Checkups", permission: "checkups", icon: ClipboardPlus },
+  { to: "/appointments", label: "Appointments", permission: "appointments", icon: ClipboardList },
+  { to: "/medications", label: "Medications", permission: "medications", icon: Syringe },
   { to: "/forms", label: "Forms", permission: "forms", icon: FileText },
   { to: "/employees", label: "Employees", permission: "employees", icon: UserRoundCog },
   { to: "/payroll", label: "Payroll", permission: "payroll", icon: Banknote },
@@ -291,6 +301,8 @@ function App() {
           <Route index element={<Dashboard />} />
           <Route path="patients" element={<Guard permission="patients"><Patients /></Guard>} />
           <Route path="checkups" element={<Guard permission="checkups"><Checkups /></Guard>} />
+          <Route path="appointments" element={<Guard permission="appointments"><AppointmentsPage /></Guard>} />
+          <Route path="medications" element={<Guard permission="medications"><MedicationsPage /></Guard>} />
           <Route path="forms" element={<Guard permission="forms"><FormsPage /></Guard>} />
           <Route path="employees" element={<Guard permission="employees"><Employees /></Guard>} />
           <Route path="payroll" element={<Guard permission="payroll"><Payroll /></Guard>} />
@@ -327,8 +339,9 @@ function Login() {
   const { signIn, isAuthenticated, showToast } = useApp();
   const navigate = useNavigate();
   const location = useLocation();
-  const [email, setEmail] = useState("admin@stjude.local");
-  const [password, setPassword] = useState("Password123!");
+  const showDemoAccounts = import.meta.env.DEV;
+  const [email, setEmail] = useState(showDemoAccounts ? "admin@stjude.local" : "");
+  const [password, setPassword] = useState(showDemoAccounts ? "Password123!" : "");
   const [error, setError] = useState("");
   const demoAccounts = [
     { label: "Super admin", email: "admin@stjude.local" },
@@ -366,15 +379,19 @@ function Login() {
           {error && <p className="form-error">{error}</p>}
           <button className="primary-btn">Sign In</button>
         </form>
-        <p className="login-demo-note">Demo password: <strong>Password123!</strong></p>
-        <div className="role-grid">
-          {demoAccounts.map((account) => (
-            <button key={account.email} onClick={() => { setEmail(account.email); setPassword("Password123!"); }} className="role-card">
-              <Shield size={22} />
-              <span>{account.label}</span>
-            </button>
-          ))}
-        </div>
+        {showDemoAccounts && (
+          <>
+            <p className="login-demo-note">Demo password: <strong>Password123!</strong></p>
+            <div className="role-grid">
+              {demoAccounts.map((account) => (
+                <button key={account.email} onClick={() => { setEmail(account.email); setPassword("Password123!"); }} className="role-card">
+                  <Shield size={22} />
+                  <span>{account.label}</span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
       </section>
     </main>
   );
@@ -449,18 +466,29 @@ function TopbarClock() {
 }
 
 function Dashboard() {
-  const { data } = useApp();
-  const activePatients = data.patients.filter((patient) => patient.status !== "Discharged").length;
+  const { data, currentUser } = useApp();
+  const doctorEmployee = data.employees.find((employee) => employee.id === currentUser.linkedEmployeeId);
+  const dashboardPatients = currentUser.role === "Doctor" && doctorEmployee
+    ? data.patients.filter((patient) => patient.attendingDoctorId === doctorEmployee.id)
+    : data.patients;
+  const activePatients = dashboardPatients.filter((patient) => patient.status !== "Discharged").length;
   const activeEmployees = data.employees.filter((employee) => employee.status === "Active").length;
-  const upcoming = data.checkups.filter((checkup) => new Date(checkup.nextAppointment) >= new Date()).slice(0, 4);
+  const patientIds = new Set(dashboardPatients.map((patient) => patient.id));
+  const upcoming = data.checkups.filter((checkup) => patientIds.has(checkup.patientId) && new Date(checkup.nextAppointment) >= new Date()).slice(0, 4);
+  const observationPatients = dashboardPatients.filter((patient) => patient.status === "Observation").length;
+  const admittedPatients = dashboardPatients.filter((patient) => patient.status === "Admitted").length;
   const payrollTotal = data.payrollRecords.reduce((sum, record) => sum + record.netPay, 0);
+  const canViewPayroll = currentUser.role !== "Doctor";
+  const canViewEmployees = currentUser.role !== "Doctor";
   return (
     <Page title="Operations Overview" action={<Link className="primary-btn" to="/patients">Open Patients</Link>}>
       <div className="metric-grid">
-        <Metric icon={<Users />} label="Current census" value={activePatients} note={`${data.patients.length} total patient records`} />
+        <Metric icon={<Users />} label={currentUser.role === "Doctor" ? "Assigned patients" : "Current census"} value={activePatients} note={`${dashboardPatients.length} relevant patient records`} />
         <Metric icon={<CalendarClock />} label="Upcoming checkups" value={upcoming.length} note="Scheduled follow-up visits" />
-        <Metric icon={<UserRoundCog />} label="Active employees" value={activeEmployees} note="Clinical and custodial staff" />
-        <Metric icon={<Banknote />} label="Net payroll" value={formatCurrency(payrollTotal)} note="Saved demo records" />
+        {currentUser.role === "Doctor" && <Metric icon={<Activity />} label="Observation" value={observationPatients} note="Patients needing closer review" />}
+        {currentUser.role === "Doctor" && <Metric icon={<ClipboardPlus />} label="Admitted" value={admittedPatients} note="Currently admitted assignments" />}
+        {canViewEmployees && <Metric icon={<UserRoundCog />} label="Active employees" value={activeEmployees} note="Clinical and custodial staff" />}
+        {canViewPayroll && <Metric icon={<Banknote />} label="Net payroll" value={formatCurrency(payrollTotal)} note="Saved demo records" />}
       </div>
       <div className="dashboard-grid">
         <section className="panel">
@@ -474,7 +502,7 @@ function Dashboard() {
           <div className="timeline">
             <p><Activity size={16} /> Patient observation updated for Carmen Lopez</p>
             <p><ClipboardPlus size={16} /> New checkup template prepared</p>
-            <p><Banknote size={16} /> Payroll preview generated for nursing staff</p>
+            {canViewPayroll && <p><Banknote size={16} /> Payroll preview generated for nursing staff</p>}
             <p><Shield size={16} /> Role access reviewed for Doctor users</p>
           </div>
         </section>
@@ -491,6 +519,44 @@ function Page({ title, children, action }: { title: string; children: ReactNode;
   return <div className="page"><div className="page-header"><div><span className="eyebrow">St. Jude Management System</span><h2>{title}</h2></div>{action}</div>{children}</div>;
 }
 
+function nextSort<K extends string>(current: SortState<K>, key: K): SortState<K> {
+  if (current.key !== key) return { key, direction: "asc" };
+  return { key, direction: current.direction === "asc" ? "desc" : "asc" };
+}
+
+function sortItems<T, K extends string>(items: T[], sort: SortState<K>, accessors: Record<K, (item: T) => SortValue>) {
+  return [...items].sort((a, b) => {
+    const first = normalizeSortValue(accessors[sort.key](a));
+    const second = normalizeSortValue(accessors[sort.key](b));
+    const direction = sort.direction === "asc" ? 1 : -1;
+
+    if (typeof first === "number" && typeof second === "number") {
+      return (first - second) * direction;
+    }
+
+    return String(first).localeCompare(String(second), undefined, { numeric: true, sensitivity: "base" }) * direction;
+  });
+}
+
+function normalizeSortValue(value: SortValue) {
+  if (value instanceof Date) return value.getTime();
+  if (value === null || value === undefined) return "";
+  return value;
+}
+
+function SortableHeader<K extends string>({ label, sortKey, sort, onSort }: { label: string; sortKey: K; sort: SortState<K>; onSort: (key: K) => void }) {
+  const active = sort.key === sortKey;
+  return (
+    <th className={active ? "sortable active" : "sortable"} aria-sort={active ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}>
+      <button type="button" onClick={() => onSort(sortKey)} aria-label={`Sort by ${label}`}>
+        <span>{label}</span>
+        <ArrowUpDown size={14} />
+        {active && <span className="sort-direction">{sort.direction === "asc" ? "A-Z" : "Z-A"}</span>}
+      </button>
+    </th>
+  );
+}
+
 const emptyPatient = (doctorId: number): Omit<Patient, "id"> => ({
   firstName: "", lastName: "", profileImageUrl: "", dateOfBirth: "1980-01-01", sex: "Male", civilStatus: "Single", nationality: "Filipino", address: "", contactNumber: "", emergencyContactName: "", emergencyContactNumber: "", attendingDoctorId: doctorId, status: "Admitted", ward: "", admissionDate: new Date().toISOString().slice(0, 10),
 });
@@ -503,8 +569,16 @@ function Patients() {
   const [error, setError] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(data.patients[0]?.id ?? null);
   const [viewingCheckup, setViewingCheckup] = useState<CheckupRecord | null>(null);
+  const [sort, setSort] = useState<SortState<"name" | "age" | "status" | "ward" | "doctor">>({ key: "name", direction: "asc" });
   const selected = data.patients.find((patient) => patient.id === selectedId) ?? data.patients[0];
   const filtered = data.patients.filter((patient) => `${patient.firstName} ${patient.lastName} ${patient.ward} ${patient.status}`.toLowerCase().includes(query.toLowerCase()));
+  const sortedPatients = sortItems(filtered, sort, {
+    name: (patient) => `${patient.firstName} ${patient.lastName}`,
+    age: (patient) => ageFromBirthDate(patient.dateOfBirth),
+    status: (patient) => patient.status,
+    ward: (patient) => patient.ward,
+    doctor: (patient) => doctorName(data, patient.attendingDoctorId),
+  });
   const canManage = currentUser.role !== "Doctor";
 
   const save = async (event: FormEvent<HTMLFormElement>) => {
@@ -554,9 +628,9 @@ function Patients() {
           <SearchBox value={query} onChange={setQuery} placeholder="Search name, ward, status..." />
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Name</th><th>Age</th><th>Status</th><th>Ward</th><th>Doctor</th><th></th></tr></thead>
+              <thead><tr><SortableHeader label="Name" sortKey="name" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Age" sortKey="age" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Status" sortKey="status" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Ward" sortKey="ward" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Doctor" sortKey="doctor" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><th></th></tr></thead>
               <tbody>
-                {filtered.map((patient) => (
+                {sortedPatients.map((patient) => (
                   <tr key={patient.id} onClick={() => setSelectedId(patient.id)}>
                     <td><div className="identity-cell"><Avatar name={`${patient.firstName} ${patient.lastName}`} src={patient.profileImageUrl} /><span><strong>{patient.firstName} {patient.lastName}</strong><small>{patient.sex} · {patient.civilStatus}</small></span></div></td>
                     <td>{ageFromBirthDate(patient.dateOfBirth)}</td>
@@ -780,7 +854,7 @@ function DoctorCheckupWorkspace({ doctor, patients, records, onStart, onEdit }: 
                 </div>
                 {latestRecord?.chiefComplaint && <p className="section-note">{latestRecord.chiefComplaint}</p>}
                 <div className="actions">
-                  <button className="primary-btn" onClick={() => onStart(patient.id)}>Conduct Checkup</button>
+                  <button className="primary-btn conduct-checkup-btn" onClick={() => onStart(patient.id)}>Conduct Checkup</button>
                   {latestRecord && <button className="secondary-btn" onClick={() => onEdit(latestRecord)}>Edit Latest</button>}
                 </div>
               </article>
@@ -827,6 +901,158 @@ interface FormTemplate {
   roles: Role[];
   description: string;
   fields: Array<{ label: string; type: "text" | "date" | "textarea" | "select"; options?: string[]; required?: boolean }>;
+}
+
+function AppointmentsPage() {
+  const { data, currentUser, refreshData, showToast, logActivity, addAppointment, updateAppointment, deleteAppointment } = useApp();
+  const doctors = data.employees.filter((employee) => employee.position === "Psychiatrist");
+  const today = new Date().toISOString().slice(0, 10);
+  const [editing, setEditing] = useState<Appointment | Omit<Appointment, "id"> | null>(null);
+  const [doctorFilter, setDoctorFilter] = useState<number | "all">("all");
+  const [sort, setSort] = useState<SortState<"date" | "patient" | "doctor" | "status" | "reason">>({ key: "date", direction: "asc" });
+  const canDelete = currentUser.role === "Super admin";
+  const visibleAppointments = doctorFilter === "all" ? data.appointments : data.appointments.filter((appointment) => appointment.doctorId === doctorFilter);
+  const sortedAppointments = sortItems(visibleAppointments, sort, {
+    date: (appointment) => new Date(appointment.startsAt),
+    patient: (appointment) => patientName(data, appointment.patientId),
+    doctor: (appointment) => doctorName(data, appointment.doctorId),
+    status: (appointment) => appointment.status,
+    reason: (appointment) => appointment.reason,
+  });
+
+  const save = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!editing) return;
+    if ("id" in editing) {
+      await backendApi.updateAppointment(editing);
+      updateAppointment(editing);
+    } else {
+      await backendApi.createAppointment(editing);
+      addAppointment(editing);
+    }
+    await refreshData();
+    logActivity({ action: "Saved", entity: "Appointment", summary: `${"id" in editing ? "Updated" : "Created"} appointment for ${patientName(data, editing.patientId)}.`, details: appointmentLogDetails(editing, data), severity: "success" });
+    showToast("Appointment saved", "success");
+    setEditing(null);
+  };
+
+  const remove = async (appointment: Appointment) => {
+    if (!window.confirm(`Delete appointment for ${patientName(data, appointment.patientId)}?`)) return;
+    await backendApi.deleteAppointment(appointment.id);
+    deleteAppointment(appointment.id);
+    await refreshData();
+    logActivity({ action: "Deleted", entity: "Appointment", summary: `Deleted appointment for ${patientName(data, appointment.patientId)}.`, details: appointmentLogDetails(appointment, data), severity: "danger" });
+    showToast("Appointment deleted", "success");
+  };
+
+  return (
+    <Page title="Appointment Calendar" action={<button className="primary-btn" onClick={() => setEditing({ patientId: data.patients[0]?.id ?? 1, doctorId: doctors[0]?.id ?? 1, startsAt: `${today}T09:00`, durationMinutes: 30, reason: "Follow-up checkup", location: "Consultation Room 1", status: "Scheduled", notes: "" })}>Add Appointment</button>}>
+      <section className="metric-grid">
+        <Metric icon={<CalendarClock />} label="Today" value={data.appointments.filter((item) => item.startsAt.slice(0, 10) === today).length} note="Appointments scheduled today" />
+        <Metric icon={<Users />} label="Doctors" value={doctors.length} note="Available psychiatrists" />
+        <Metric icon={<ClipboardList />} label="Scheduled" value={data.appointments.filter((item) => item.status === "Scheduled").length} note="Open calendar items" />
+        <Metric icon={<Activity />} label="Completed" value={data.appointments.filter((item) => item.status === "Completed").length} note="Finished appointments" />
+      </section>
+      <div className="dashboard-grid">
+        <section className="panel">
+          <div className="payroll-history-header">
+            <div><h2>Calendar List</h2><p className="section-note">Filter by doctor and sort appointments.</p></div>
+            <select value={doctorFilter} onChange={(event) => setDoctorFilter(event.target.value === "all" ? "all" : Number(event.target.value))}><option value="all">All doctors</option>{doctors.map((doctor) => <option key={doctor.id} value={doctor.id}>{doctorNameFromEmployee(doctor)}</option>)}</select>
+          </div>
+          <div className="table-wrap"><table><thead><tr><SortableHeader label="Date" sortKey="date" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Patient" sortKey="patient" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Doctor" sortKey="doctor" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Reason" sortKey="reason" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Status" sortKey="status" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><th></th></tr></thead><tbody>{sortedAppointments.map((appointment) => <tr key={appointment.id}><td><strong>{formatDate(appointment.startsAt)}</strong><small>{new Date(appointment.startsAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} - {appointment.durationMinutes} min</small></td><td>{patientName(data, appointment.patientId)}</td><td>{doctorName(data, appointment.doctorId)}</td><td>{appointment.reason}</td><td><Badge>{appointment.status}</Badge></td><td className="actions"><button onClick={() => setEditing(appointment)}>Edit</button>{canDelete && <button className="danger" onClick={() => remove(appointment)}>Delete</button>}</td></tr>)}</tbody></table></div>
+        </section>
+        <section className="panel"><h2>Doctor Availability</h2><div className="stack">{doctors.map((doctor) => { const count = data.appointments.filter((appointment) => appointment.doctorId === doctor.id && appointment.startsAt.slice(0, 10) === today && appointment.status === "Scheduled").length; return <article className="list-card" key={doctor.id}><strong>{doctorNameFromEmployee(doctor)}</strong><span>{count} scheduled today</span><small>{count >= 6 ? "Heavy schedule" : count >= 3 ? "Moderate schedule" : "Available capacity"}</small></article>; })}</div></section>
+      </div>
+      {editing && <Modal title={"id" in editing ? "Edit Appointment" : "Add Appointment"} onClose={() => setEditing(null)}><AppointmentForm appointment={editing} patients={data.patients} doctors={doctors} onChange={setEditing} onSubmit={save} onCancel={() => setEditing(null)} /></Modal>}
+    </Page>
+  );
+}
+
+function AppointmentForm({ appointment, patients, doctors, onChange, onSubmit, onCancel }: { appointment: Appointment | Omit<Appointment, "id">; patients: Patient[]; doctors: Employee[]; onChange: (appointment: Appointment | Omit<Appointment, "id">) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onCancel: () => void }) {
+  const set = (patch: Partial<Appointment>) => onChange({ ...appointment, ...patch });
+  return <form className="form-grid" onSubmit={onSubmit}><select value={appointment.patientId} onChange={(e) => set({ patientId: Number(e.target.value) })}>{patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.firstName} {patient.lastName} - {patient.ward}</option>)}</select><select value={appointment.doctorId} onChange={(e) => set({ doctorId: Number(e.target.value) })}>{doctors.map((doctor) => <option key={doctor.id} value={doctor.id}>{doctorNameFromEmployee(doctor)}</option>)}</select><label>Start time<input required type="datetime-local" value={appointment.startsAt.slice(0, 16)} onChange={(e) => set({ startsAt: e.target.value })} /></label><input required type="number" min={15} max={240} value={appointment.durationMinutes} onChange={(e) => set({ durationMinutes: Number(e.target.value) })} /><input required placeholder="Reason" value={appointment.reason} onChange={(e) => set({ reason: e.target.value })} /><input placeholder="Location" value={appointment.location ?? ""} onChange={(e) => set({ location: e.target.value })} /><select value={appointment.status} onChange={(e) => set({ status: e.target.value as Appointment["status"] })}><option>Scheduled</option><option>Completed</option><option>Cancelled</option></select><textarea placeholder="Notes" value={appointment.notes ?? ""} onChange={(e) => set({ notes: e.target.value })} /><div className="form-actions"><button type="button" className="secondary-btn" onClick={onCancel}>Cancel</button><button className="primary-btn">Save Appointment</button></div></form>;
+}
+
+function MedicationsPage() {
+  const { data, currentUser, refreshData, showToast, logActivity, addMedicationSchedule, updateMedicationSchedule, deleteMedicationSchedule, addMedicationAdministration } = useApp();
+  const [editing, setEditing] = useState<MedicationSchedule | Omit<MedicationSchedule, "id"> | null>(null);
+  const [administering, setAdministering] = useState<MedicationSchedule | null>(null);
+  const [sort, setSort] = useState<SortState<"patient" | "medication" | "frequency" | "status" | "start">>({ key: "patient", direction: "asc" });
+  const canDelete = currentUser.role === "Super admin";
+  const activeSchedules = data.medicationSchedules.filter((item) => item.status === "Active");
+  const sortedSchedules = sortItems(data.medicationSchedules, sort, {
+    patient: (schedule) => patientName(data, schedule.patientId),
+    medication: (schedule) => schedule.medication,
+    frequency: (schedule) => schedule.frequency,
+    status: (schedule) => schedule.status,
+    start: (schedule) => new Date(schedule.startDate),
+  });
+
+  const saveSchedule = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!editing) return;
+    if ("id" in editing) {
+      await backendApi.updateMedicationSchedule(editing);
+      updateMedicationSchedule(editing);
+    } else {
+      await backendApi.createMedicationSchedule(editing);
+      addMedicationSchedule(editing);
+    }
+    await refreshData();
+    logActivity({ action: "Saved", entity: "Medication Schedule", summary: `${"id" in editing ? "Updated" : "Created"} ${editing.medication} for ${patientName(data, editing.patientId)}.`, details: medicationScheduleLogDetails(editing, data), severity: "success" });
+    showToast("Medication schedule saved", "success");
+    setEditing(null);
+  };
+
+  const removeSchedule = async (schedule: MedicationSchedule) => {
+    if (!window.confirm(`Delete medication schedule for ${schedule.medication}?`)) return;
+    await backendApi.deleteMedicationSchedule(schedule.id);
+    deleteMedicationSchedule(schedule.id);
+    await refreshData();
+    logActivity({ action: "Deleted", entity: "Medication Schedule", summary: `Deleted ${schedule.medication} schedule for ${patientName(data, schedule.patientId)}.`, details: medicationScheduleLogDetails(schedule, data), severity: "danger" });
+    showToast("Medication schedule deleted", "success");
+  };
+
+  const recordAdministration = async (record: Omit<MedicationAdministration, "id">) => {
+    await backendApi.createMedicationAdministration(record);
+    addMedicationAdministration(record);
+    await refreshData();
+    logActivity({ action: "Recorded", entity: "Medication Administration", summary: `Recorded ${record.status.toLowerCase()} dose of ${record.medication} for ${patientName(data, record.patientId)}.`, details: medicationAdministrationLogDetails(record, data), severity: record.status === "Given" ? "success" : "warning" });
+    showToast("Medication administration recorded", "success");
+    setAdministering(null);
+  };
+
+  return (
+    <Page title="Medication Administration" action={<button className="primary-btn" onClick={() => setEditing({ patientId: data.patients[0]?.id ?? 1, medication: "", dosage: "", route: "Oral", frequency: "Once daily", times: ["08:00"], startDate: new Date().toISOString().slice(0, 10), prescribedBy: doctorName(data, data.patients[0]?.attendingDoctorId ?? 1), status: "Active", instructions: "" })}>Add Schedule</button>}>
+      <section className="metric-grid">
+        <Metric icon={<Syringe />} label="Active schedules" value={activeSchedules.length} note="Current medication orders" />
+        <Metric icon={<ClipboardList />} label="Administrations" value={data.medicationAdministrations.length} note="Recorded medication events" />
+        <Metric icon={<Users />} label="Patients covered" value={new Set(activeSchedules.map((item) => item.patientId)).size} note="With active schedules" />
+        <Metric icon={<Activity />} label="Exceptions" value={data.medicationAdministrations.filter((item) => item.status !== "Given").length} note="Missed, refused, or held" />
+      </section>
+      <div className="dashboard-grid">
+        <section className="panel"><h2>Medication Schedules</h2><div className="table-wrap"><table><thead><tr><SortableHeader label="Patient" sortKey="patient" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Medication" sortKey="medication" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Frequency" sortKey="frequency" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Start" sortKey="start" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Status" sortKey="status" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><th></th></tr></thead><tbody>{sortedSchedules.map((schedule) => <tr key={schedule.id}><td>{patientName(data, schedule.patientId)}</td><td><strong>{schedule.medication}</strong><small>{schedule.dosage} - {schedule.route}</small></td><td>{schedule.frequency}<small>{schedule.times.join(", ")}</small></td><td>{formatDate(schedule.startDate)}</td><td><Badge>{schedule.status}</Badge></td><td className="actions"><button onClick={() => setAdministering(schedule)}>Record</button><button onClick={() => setEditing(schedule)}>Edit</button>{canDelete && <button className="danger" onClick={() => removeSchedule(schedule)}>Delete</button>}</td></tr>)}</tbody></table></div></section>
+        <section className="panel"><h2>Recent Administration</h2><div className="stack">{data.medicationAdministrations.slice(0, 8).map((record) => <article className="list-card" key={record.id}><strong>{record.medication} - {record.status}</strong><span>{patientName(data, record.patientId)} - {formatDate(record.administeredAt)}</span><small>{record.administeredBy}{record.notes ? ` - ${record.notes}` : ""}</small></article>)}</div></section>
+      </div>
+      {editing && <Modal title={"id" in editing ? "Edit Medication Schedule" : "Add Medication Schedule"} onClose={() => setEditing(null)}><MedicationScheduleForm schedule={editing} patients={data.patients} onChange={setEditing} onSubmit={saveSchedule} onCancel={() => setEditing(null)} /></Modal>}
+      {administering && <Modal title="Record Medication Administration" onClose={() => setAdministering(null)}><MedicationAdministrationForm schedule={administering} currentUser={currentUser} onSubmit={recordAdministration} onCancel={() => setAdministering(null)} /></Modal>}
+    </Page>
+  );
+}
+
+function MedicationScheduleForm({ schedule, patients, onChange, onSubmit, onCancel }: { schedule: MedicationSchedule | Omit<MedicationSchedule, "id">; patients: Patient[]; onChange: (schedule: MedicationSchedule | Omit<MedicationSchedule, "id">) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onCancel: () => void }) {
+  const set = (patch: Partial<MedicationSchedule>) => onChange({ ...schedule, ...patch });
+  return <form className="form-grid" onSubmit={onSubmit}><select value={schedule.patientId} onChange={(e) => set({ patientId: Number(e.target.value) })}>{patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.firstName} {patient.lastName} - {patient.ward}</option>)}</select><input required placeholder="Medication" value={schedule.medication} onChange={(e) => set({ medication: e.target.value })} /><input required placeholder="Dosage" value={schedule.dosage} onChange={(e) => set({ dosage: e.target.value })} /><select value={schedule.route} onChange={(e) => set({ route: e.target.value })}><option>Oral</option><option>IM</option><option>IV</option><option>Topical</option><option>Sublingual</option></select><input required placeholder="Frequency" value={schedule.frequency} onChange={(e) => set({ frequency: e.target.value })} /><input required placeholder="Times, comma-separated" value={schedule.times.join(", ")} onChange={(e) => set({ times: e.target.value.split(",").map((item) => item.trim()).filter(Boolean) })} /><label>Start date<input required type="date" value={schedule.startDate} onChange={(e) => set({ startDate: e.target.value })} /></label><label>End date<input type="date" value={schedule.endDate ?? ""} onChange={(e) => set({ endDate: e.target.value || undefined })} /></label><input required placeholder="Prescribed by" value={schedule.prescribedBy} onChange={(e) => set({ prescribedBy: e.target.value })} /><select value={schedule.status} onChange={(e) => set({ status: e.target.value as MedicationSchedule["status"] })}><option>Active</option><option>Paused</option><option>Completed</option></select><textarea placeholder="Instructions" value={schedule.instructions ?? ""} onChange={(e) => set({ instructions: e.target.value })} /><div className="form-actions"><button type="button" className="secondary-btn" onClick={onCancel}>Cancel</button><button className="primary-btn">Save Schedule</button></div></form>;
+}
+
+function MedicationAdministrationForm({ schedule, currentUser, onSubmit, onCancel }: { schedule: MedicationSchedule; currentUser: User; onSubmit: (record: Omit<MedicationAdministration, "id">) => void; onCancel: () => void }) {
+  const [status, setStatus] = useState<MedicationAdministration["status"]>("Given");
+  const [notes, setNotes] = useState("");
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    onSubmit({ scheduleId: schedule.id, patientId: schedule.patientId, medication: schedule.medication, dosage: schedule.dosage, administeredAt: new Date().toISOString(), administeredBy: currentUser.name, status, notes });
+  };
+  return <form className="form-grid" onSubmit={submit}><p className="section-note">Recording {schedule.medication} {schedule.dosage}</p><select value={status} onChange={(e) => setStatus(e.target.value as MedicationAdministration["status"])}><option>Given</option><option>Missed</option><option>Refused</option><option>Held</option></select><textarea placeholder="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} /><div className="form-actions"><button type="button" className="secondary-btn" onClick={onCancel}>Cancel</button><button className="primary-btn">Record Dose</button></div></form>;
 }
 
 const formTemplates: FormTemplate[] = [
@@ -928,6 +1154,15 @@ function FormsPage() {
   const [selectedId, setSelectedId] = useState(allowedTemplates[0]?.id ?? formTemplates[0].id);
   const selected = allowedTemplates.find((template) => template.id === selectedId) ?? allowedTemplates[0];
   const [fields, setFields] = useState<Record<string, string>>({});
+  const [sort, setSort] = useState<SortState<"form" | "category" | "submittedBy" | "date" | "status" | "detail">>({ key: "date", direction: "desc" });
+  const sortedForms = sortItems(data.forms, sort, {
+    form: (form) => form.title,
+    category: (form) => form.category,
+    submittedBy: (form) => form.submittedBy,
+    date: (form) => new Date(form.submittedAt),
+    status: (form) => form.status,
+    detail: (form) => Object.values(form.fields).find(Boolean) ?? "",
+  });
 
   useEffect(() => {
     setFields({});
@@ -994,9 +1229,9 @@ function FormsPage() {
         <h2>Recent Submitted Forms</h2>
         <div className="table-wrap">
           <table>
-            <thead><tr><th>Form</th><th>Category</th><th>Submitted by</th><th>Date</th><th>Status</th><th>Key detail</th></tr></thead>
+            <thead><tr><SortableHeader label="Form" sortKey="form" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Category" sortKey="category" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Submitted by" sortKey="submittedBy" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Date" sortKey="date" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Status" sortKey="status" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Key detail" sortKey="detail" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /></tr></thead>
             <tbody>
-              {data.forms.map((form) => (
+              {sortedForms.map((form) => (
                 <tr key={form.id}>
                   <td><strong>{form.title}</strong><small>{form.templateId}</small></td>
                   <td>{form.category}</td>
@@ -1036,7 +1271,16 @@ function Employees() {
   const [editing, setEditing] = useState<Employee | Omit<Employee, "id"> | null>(null);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<SortState<"employee" | "position" | "department" | "salary" | "schedule" | "status">>({ key: "employee", direction: "asc" });
   const filtered = data.employees.filter((employee) => `${employee.firstName} ${employee.lastName} ${employee.position} ${employee.department}`.toLowerCase().includes(query.toLowerCase()));
+  const sortedEmployees = sortItems(filtered, sort, {
+    employee: (employee) => `${employee.firstName} ${employee.lastName}`,
+    position: (employee) => employee.position,
+    department: (employee) => employee.department,
+    salary: (employee) => employee.baseSalary,
+    schedule: (employee) => employee.workDaysPerWeek,
+    status: (employee) => employee.status,
+  });
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!editing) return;
@@ -1079,7 +1323,7 @@ function Employees() {
     <Page title="Employee Management" action={<button className="primary-btn" onClick={() => setEditing({ employeeCode: "", firstName: "", lastName: "", profileImageUrl: "", position: "Care Staff", department: "Custodial Care", email: "", phone: "", hireDate: new Date().toISOString().slice(0, 10), baseSalary: 25000, workDaysPerWeek: 6, status: "Active" })}>Add Employee</button>}>
       <section className="panel">
         <SearchBox value={query} onChange={setQuery} placeholder="Search employees..." />
-        <div className="table-wrap"><table><thead><tr><th>Employee</th><th>Position</th><th>Department</th><th>Salary</th><th>Schedule</th><th>Status</th><th></th></tr></thead><tbody>{filtered.map((employee) => <tr key={employee.id}><td><div className="identity-cell"><Avatar name={`${employee.firstName} ${employee.lastName}`} src={employee.profileImageUrl} /><span><strong>{employee.firstName} {employee.lastName}</strong><small>{employee.employeeCode}</small></span></div></td><td>{employee.position}</td><td>{employee.department}</td><td>{formatCurrency(employee.baseSalary)}</td><td>{employee.workDaysPerWeek}-day</td><td><Badge>{employee.status}</Badge></td><td className="actions"><button onClick={() => setEditing(employee)}>Edit</button><button className="danger" onClick={() => removeEmployee(employee)}>Delete</button></td></tr>)}</tbody></table></div>
+        <div className="table-wrap"><table><thead><tr><SortableHeader label="Employee" sortKey="employee" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Position" sortKey="position" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Department" sortKey="department" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Salary" sortKey="salary" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Schedule" sortKey="schedule" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Status" sortKey="status" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><th></th></tr></thead><tbody>{sortedEmployees.map((employee) => <tr key={employee.id}><td><div className="identity-cell"><Avatar name={`${employee.firstName} ${employee.lastName}`} src={employee.profileImageUrl} /><span><strong>{employee.firstName} {employee.lastName}</strong><small>{employee.employeeCode}</small></span></div></td><td>{employee.position}</td><td>{employee.department}</td><td>{formatCurrency(employee.baseSalary)}</td><td>{employee.workDaysPerWeek}-day</td><td><Badge>{employee.status}</Badge></td><td className="actions"><button onClick={() => setEditing(employee)}>Edit</button><button className="danger" onClick={() => removeEmployee(employee)}>Delete</button></td></tr>)}</tbody></table></div>
       </section>
       {editing && <Modal title={"id" in editing ? "Edit Employee Record" : "Add Employee Record"} onClose={() => setEditing(null)}>{error && <p className="form-error">{error}</p>}<EmployeeForm employee={editing} onChange={setEditing} onSubmit={save} onCancel={() => setEditing(null)} /></Modal>}
     </Page>
@@ -1088,7 +1332,23 @@ function Employees() {
 
 function EmployeeForm({ employee, onChange, onSubmit, onCancel }: { employee: Employee | Omit<Employee, "id">; onChange: (employee: Employee | Omit<Employee, "id">) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onCancel: () => void }) {
   const set = (patch: Partial<Employee>) => onChange({ ...employee, ...patch });
-  return <form className="form-grid" onSubmit={onSubmit}><ProfilePhotoField name={`${employee.firstName} ${employee.lastName}`} value={employee.profileImageUrl} onChange={(profileImageUrl) => set({ profileImageUrl })} /><input required placeholder="Employee code" value={employee.employeeCode} onChange={(e) => set({ employeeCode: e.target.value })} /><input required placeholder="First name" value={employee.firstName} onChange={(e) => set({ firstName: e.target.value })} /><input required placeholder="Last name" value={employee.lastName} onChange={(e) => set({ lastName: e.target.value })} /><select value={employee.position} onChange={(e) => set({ position: e.target.value })}><option>Psychiatrist</option><option>Nurse</option><option>Care Staff</option><option>Cook</option><option>Administrator</option></select><input placeholder="Department" value={employee.department} onChange={(e) => set({ department: e.target.value })} /><input type="email" placeholder="Email" value={employee.email} onChange={(e) => set({ email: e.target.value })} /><input placeholder="Phone" value={employee.phone} onChange={(e) => set({ phone: e.target.value })} /><label>Hire date<input type="date" value={employee.hireDate} onChange={(e) => set({ hireDate: e.target.value })} /></label><input type="number" placeholder="Monthly salary" value={employee.baseSalary} onChange={(e) => set({ baseSalary: Number(e.target.value) })} /><select value={employee.workDaysPerWeek} onChange={(e) => set({ workDaysPerWeek: Number(e.target.value) as 5 | 6 })}><option value={5}>5-day workweek</option><option value={6}>6-day workweek</option></select><select value={employee.status} onChange={(e) => set({ status: e.target.value as Employee["status"] })}><option>Active</option><option>Inactive</option></select><div className="form-actions"><button type="button" className="secondary-btn" onClick={onCancel}>Cancel</button><button className="primary-btn">Save Employee</button></div></form>;
+  return (
+    <form className="form-grid" onSubmit={onSubmit}>
+      <ProfilePhotoField name={`${employee.firstName} ${employee.lastName}`} value={employee.profileImageUrl} onChange={(profileImageUrl) => set({ profileImageUrl })} />
+      <input required placeholder="Employee code" value={employee.employeeCode} onChange={(e) => set({ employeeCode: e.target.value })} />
+      <input required placeholder="First name" value={employee.firstName} onChange={(e) => set({ firstName: e.target.value })} />
+      <input required placeholder="Last name" value={employee.lastName} onChange={(e) => set({ lastName: e.target.value })} />
+      <select value={employee.position} onChange={(e) => set({ position: e.target.value })}><option>Psychiatrist</option><option>Nurse</option><option>Care Staff</option><option>Cook</option><option>Administrator</option></select>
+      <input required placeholder="Department" value={employee.department} onChange={(e) => set({ department: e.target.value })} />
+      <input type="email" placeholder="Email" value={employee.email} onChange={(e) => set({ email: e.target.value })} />
+      <input placeholder="Phone" value={employee.phone} onChange={(e) => set({ phone: e.target.value })} />
+      <input required type="date" value={employee.hireDate} onChange={(e) => set({ hireDate: e.target.value })} />
+      <input required type="number" min={0} value={employee.baseSalary} onChange={(e) => set({ baseSalary: Number(e.target.value) })} />
+      <select value={employee.workDaysPerWeek} onChange={(e) => set({ workDaysPerWeek: Number(e.target.value) as 5 | 6 })}><option value={5}>5-day schedule</option><option value={6}>6-day schedule</option></select>
+      <select value={employee.status} onChange={(e) => set({ status: e.target.value as Employee["status"] })}><option>Active</option><option>Inactive</option></select>
+      <div className="form-actions"><button type="button" className="secondary-btn" onClick={onCancel}>Cancel</button><button className="primary-btn">Save Employee</button></div>
+    </form>
+  );
 }
 
 function Payroll() {
@@ -1100,6 +1360,7 @@ function Payroll() {
   const [selectedPayrollIds, setSelectedPayrollIds] = useState<number[]>([]);
   const [payrollPage, setPayrollPage] = useState(1);
   const [payrollItemsPerPage, setPayrollItemsPerPage] = useState(8);
+  const [payrollSort, setPayrollSort] = useState<SortState<"employee" | "period" | "gross" | "deductions" | "net">>({ key: "period", direction: "desc" });
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<number[]>(activeEmployees.map((item) => item.id));
   const [daysWorked, setDaysWorked] = useState(13);
   const [overtimeHours, setOvertimeHours] = useState(0);
@@ -1135,8 +1396,15 @@ function Payroll() {
   const bulkNet = bulkPreview.reduce((sum, record) => sum + record.netPay, 0);
   const payrollRecords = [...data.payrollRecords].sort((a, b) => new Date(b.payPeriodEnd).getTime() - new Date(a.payPeriodEnd).getTime());
   const filteredPayrollRecords = historyEmployeeId === "all" ? payrollRecords : payrollRecords.filter((record) => record.employeeId === historyEmployeeId);
-  const payrollTotalPages = Math.max(1, Math.ceil(filteredPayrollRecords.length / payrollItemsPerPage));
-  const payrollPageRecords = filteredPayrollRecords.slice((payrollPage - 1) * payrollItemsPerPage, payrollPage * payrollItemsPerPage);
+  const sortedPayrollRecords = sortItems(filteredPayrollRecords, payrollSort, {
+    employee: (record) => employeeName(data, record.employeeId),
+    period: (record) => new Date(record.payPeriodEnd),
+    gross: (record) => record.grossPay,
+    deductions: (record) => record.totalDeductions,
+    net: (record) => record.netPay,
+  });
+  const payrollTotalPages = Math.max(1, Math.ceil(sortedPayrollRecords.length / payrollItemsPerPage));
+  const payrollPageRecords = sortedPayrollRecords.slice((payrollPage - 1) * payrollItemsPerPage, payrollPage * payrollItemsPerPage);
   const totalGrossPayroll = payrollRecords.reduce((sum, record) => sum + record.grossPay, 0);
   const totalNetPayroll = payrollRecords.reduce((sum, record) => sum + record.netPay, 0);
   const totalPayrollDeductions = payrollRecords.reduce((sum, record) => sum + record.totalDeductions, 0);
@@ -1264,11 +1532,11 @@ function Payroll() {
               <thead>
                 <tr>
                   <th><input type="checkbox" checked={payrollPageRecords.length > 0 && payrollPageRecords.every((record) => selectedPayrollIds.includes(record.id))} onChange={(event) => event.target.checked ? setSelectedPayrollIds((current) => Array.from(new Set([...current, ...payrollPageRecords.map((record) => record.id)]))) : setSelectedPayrollIds((current) => current.filter((id) => !payrollPageRecords.some((record) => record.id === id)))} /></th>
-                  <th>Employee</th>
-                  <th>Pay Period</th>
-                  <th>Gross</th>
-                  <th>Deductions</th>
-                  <th>Net Pay</th>
+                  <SortableHeader label="Employee" sortKey="employee" sort={payrollSort} onSort={(key) => { setPayrollSort((current) => nextSort(current, key)); setPayrollPage(1); }} />
+                  <SortableHeader label="Pay Period" sortKey="period" sort={payrollSort} onSort={(key) => { setPayrollSort((current) => nextSort(current, key)); setPayrollPage(1); }} />
+                  <SortableHeader label="Gross" sortKey="gross" sort={payrollSort} onSort={(key) => { setPayrollSort((current) => nextSort(current, key)); setPayrollPage(1); }} />
+                  <SortableHeader label="Deductions" sortKey="deductions" sort={payrollSort} onSort={(key) => { setPayrollSort((current) => nextSort(current, key)); setPayrollPage(1); }} />
+                  <SortableHeader label="Net Pay" sortKey="net" sort={payrollSort} onSort={(key) => { setPayrollSort((current) => nextSort(current, key)); setPayrollPage(1); }} />
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -1381,8 +1649,15 @@ function ActivityLogCard({ log }: { log: ActivityLog }) {
 
 function UsersPage() {
   const { data, currentUser, addUser, updateUser, deleteUser, refreshData, showToast, logActivity } = useApp();
-  const [editing, setEditing] = useState<User | Omit<User, "id"> | null>(null);
+  const [editing, setEditing] = useState<UserEditor | null>(null);
   const [error, setError] = useState("");
+  const [sort, setSort] = useState<SortState<"name" | "email" | "role" | "status">>({ key: "name", direction: "asc" });
+  const sortedUsers = sortItems(data.users, sort, {
+    name: (user) => user.name,
+    email: (user) => user.email,
+    role: (user) => user.role,
+    status: (user) => user.status,
+  });
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!editing) return;
@@ -1427,16 +1702,31 @@ function UsersPage() {
   };
 
   return (
-    <Page title="Users and Roles" action={<button className="primary-btn" onClick={() => setEditing({ name: "", email: "", profileImageUrl: "", role: "Staff", status: "Active" })}>Add User</button>}>
-      <section className="panel"><div className="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead><tbody>{data.users.map((user) => <tr key={user.id}><td><div className="identity-cell"><Avatar name={user.name} src={user.profileImageUrl} /><strong>{user.name}</strong></div></td><td>{user.email}</td><td><Badge>{user.role}</Badge></td><td>{user.status}</td><td className="actions"><button onClick={() => setEditing(user)}>Edit</button><button className="danger" onClick={() => removeUser(user)}>Delete</button></td></tr>)}</tbody></table></div></section>
+    <Page title="Users and Roles" action={<button className="primary-btn" onClick={() => setEditing({ name: "", email: "", profileImageUrl: "", role: "Staff", status: "Active", password: "" })}>Add User</button>}>
+      <section className="panel"><div className="table-wrap"><table><thead><tr><SortableHeader label="Name" sortKey="name" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Email" sortKey="email" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Role" sortKey="role" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Status" sortKey="status" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><th></th></tr></thead><tbody>{sortedUsers.map((user) => <tr key={user.id}><td><div className="identity-cell"><Avatar name={user.name} src={user.profileImageUrl} /><strong>{user.name}</strong></div></td><td>{user.email}</td><td><Badge>{user.role}</Badge></td><td>{user.status}</td><td className="actions"><button onClick={() => setEditing(user)}>Edit</button><button className="danger" onClick={() => removeUser(user)}>Delete</button></td></tr>)}</tbody></table></div></section>
       {editing && <Modal title={"id" in editing ? "Edit User Account" : "Add User Account"} onClose={() => setEditing(null)}>{error && <p className="form-error">{error}</p>}<UserForm user={editing} employees={data.employees} onChange={setEditing} onSubmit={save} onCancel={() => setEditing(null)} /></Modal>}
     </Page>
   );
 }
 
-function UserForm({ user, employees, onChange, onSubmit, onCancel }: { user: User | Omit<User, "id">; employees: Employee[]; onChange: (user: User | Omit<User, "id">) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onCancel: () => void }) {
-  const set = (patch: Partial<User>) => onChange({ ...user, ...patch });
-  return <form className="form-grid" onSubmit={onSubmit}><ProfilePhotoField name={user.name} value={user.profileImageUrl} onChange={(profileImageUrl) => set({ profileImageUrl })} /><input required placeholder="Name" value={user.name} onChange={(e) => set({ name: e.target.value })} /><input required type="email" placeholder="Email" value={user.email} onChange={(e) => set({ email: e.target.value })} /><select value={user.role} onChange={(e) => set({ role: e.target.value as Role })}><option>Super admin</option><option>Staff</option><option>Doctor</option></select><select value={user.status} onChange={(e) => set({ status: e.target.value as User["status"] })}><option>Active</option><option>Inactive</option></select><select value={user.linkedEmployeeId ?? ""} onChange={(e) => set({ linkedEmployeeId: e.target.value ? Number(e.target.value) : undefined })}><option value="">No linked employee</option>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.firstName} {employee.lastName} · {employee.position}</option>)}</select><div className="form-actions"><button type="button" className="secondary-btn" onClick={onCancel}>Cancel</button><button className="primary-btn">Save User</button></div></form>;
+function UserForm({ user, employees, onChange, onSubmit, onCancel }: { user: UserEditor; employees: Employee[]; onChange: (user: UserEditor) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onCancel: () => void }) {
+  const isNew = !("id" in user);
+  const set = (patch: Partial<UserEditor>) => onChange({ ...user, ...patch });
+  return (
+    <form className="form-grid" onSubmit={onSubmit}>
+      <ProfilePhotoField name={user.name} value={user.profileImageUrl} onChange={(profileImageUrl) => set({ profileImageUrl })} />
+      <input required placeholder="Name" value={user.name} onChange={(e) => set({ name: e.target.value })} />
+      <input required type="email" placeholder="Email" value={user.email} onChange={(e) => set({ email: e.target.value })} disabled={!isNew} />
+      {isNew && <input required minLength={12} type="password" placeholder="Temporary password" value={user.password ?? ""} onChange={(e) => set({ password: e.target.value })} />}
+      <select value={user.role} onChange={(e) => set({ role: e.target.value as Role })}><option>Super admin</option><option>Staff</option><option>Doctor</option></select>
+      <select value={user.status} onChange={(e) => set({ status: e.target.value as User["status"] })}><option>Active</option><option>Inactive</option></select>
+      <select value={user.linkedEmployeeId ?? ""} onChange={(e) => set({ linkedEmployeeId: e.target.value ? Number(e.target.value) : undefined })}>
+        <option value="">No linked employee</option>
+        {employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.firstName} {employee.lastName} - {employee.position}</option>)}
+      </select>
+      <div className="form-actions"><button type="button" className="secondary-btn" onClick={onCancel}>Cancel</button><button className="primary-btn">Save User</button></div>
+    </form>
+  );
 }
 
 function SearchBox({ value, onChange, placeholder }: { value: string; onChange: (value: string) => void; placeholder: string }) {
@@ -1613,6 +1903,41 @@ function payrollLogDetails(record: PayrollRecord | Omit<PayrollRecord, "id">, da
     `Gross pay: ${formatCurrency(record.grossPay)}`,
     `Deductions: ${formatCurrency(record.totalDeductions)}`,
     `Net pay: ${formatCurrency(record.netPay)}`,
+  ];
+}
+
+function appointmentLogDetails(appointment: Appointment | Omit<Appointment, "id">, data: AppData) {
+  return [
+    `Patient: ${patientName(data, appointment.patientId)}`,
+    `Doctor: ${doctorName(data, appointment.doctorId)}`,
+    `Starts: ${formatDate(appointment.startsAt)}`,
+    `Duration: ${appointment.durationMinutes} minutes`,
+    `Reason: ${appointment.reason}`,
+    `Location: ${appointment.location || "N/A"}`,
+    `Status: ${appointment.status}`,
+  ];
+}
+
+function medicationScheduleLogDetails(schedule: MedicationSchedule | Omit<MedicationSchedule, "id">, data: AppData) {
+  return [
+    `Patient: ${patientName(data, schedule.patientId)}`,
+    `Medication: ${schedule.medication}`,
+    `Dosage: ${schedule.dosage}`,
+    `Route: ${schedule.route}`,
+    `Frequency: ${schedule.frequency}`,
+    `Times: ${schedule.times.join(", ")}`,
+    `Status: ${schedule.status}`,
+  ];
+}
+
+function medicationAdministrationLogDetails(record: MedicationAdministration | Omit<MedicationAdministration, "id">, data: AppData) {
+  return [
+    `Patient: ${patientName(data, record.patientId)}`,
+    `Medication: ${record.medication}`,
+    `Dosage: ${record.dosage}`,
+    `Status: ${record.status}`,
+    `Administered by: ${record.administeredBy}`,
+    `Notes: ${record.notes || "N/A"}`,
   ];
 }
 

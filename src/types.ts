@@ -108,6 +108,45 @@ export interface ActivityLog {
   severity: "info" | "success" | "warning" | "danger";
 }
 
+export interface MedicationSchedule {
+  id: number;
+  patientId: number;
+  medication: string;
+  dosage: string;
+  route: string;
+  frequency: string;
+  times: string[];
+  startDate: string;
+  endDate?: string;
+  instructions?: string;
+  prescribedBy: string;
+  status: "Active" | "Paused" | "Completed";
+}
+
+export interface MedicationAdministration {
+  id: number;
+  scheduleId?: number;
+  patientId: number;
+  medication: string;
+  dosage: string;
+  administeredAt: string;
+  administeredBy: string;
+  status: "Given" | "Missed" | "Refused" | "Held";
+  notes?: string;
+}
+
+export interface Appointment {
+  id: number;
+  patientId: number;
+  doctorId: number;
+  startsAt: string;
+  durationMinutes: number;
+  reason: string;
+  location?: string;
+  status: "Scheduled" | "Completed" | "Cancelled";
+  notes?: string;
+}
+
 export interface AppData {
   patients: Patient[];
   checkups: CheckupRecord[];
@@ -116,4 +155,7 @@ export interface AppData {
   users: User[];
   forms: CareFormSubmission[];
   activityLogs: ActivityLog[];
+  medicationSchedules: MedicationSchedule[];
+  medicationAdministrations: MedicationAdministration[];
+  appointments: Appointment[];
 }

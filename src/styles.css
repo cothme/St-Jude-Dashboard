@@ -453,6 +453,7 @@ textarea:focus-visible {
 }
 
 .actions {
+  align-items: center;
   display: flex;
   gap: 8px;
 }
@@ -739,6 +740,23 @@ td small,
   min-height: 38px;
 }
 
+.conduct-checkup-btn {
+  background: var(--forest-900);
+  border: 2px solid var(--lime-100);
+  box-shadow: 0 12px 28px color-mix(in srgb, var(--forest-900) 34%, transparent);
+  color: #ffffff;
+  flex: 1 1 180px;
+  min-height: 44px;
+  outline: 2px solid color-mix(in srgb, var(--lime-100) 46%, transparent);
+  outline-offset: 2px;
+}
+
+.conduct-checkup-btn:hover {
+  border-color: color-mix(in srgb, var(--lime-100) 78%, white);
+  background: var(--forest-600);
+  box-shadow: 0 16px 34px color-mix(in srgb, var(--forest-900) 42%, transparent);
+}
+
 .timeline {
   display: grid;
   gap: 12px;
@@ -812,11 +830,72 @@ th {
   text-transform: uppercase;
 }
 
+th.sortable {
+  padding: 0;
+}
+
+th.sortable button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  display: inline-flex;
+  font-size: inherit;
+  font-weight: 900;
+  gap: 6px;
+  min-height: 44px;
+  padding: 12px 10px;
+  text-align: left;
+  text-transform: inherit;
+  width: 100%;
+}
+
+th.sortable button:hover {
+  background: color-mix(in srgb, var(--lime-100) 28%, transparent);
+  color: var(--forest-700);
+}
+
+th.sortable.active button {
+  color: var(--forest-700);
+}
+
+.sort-direction {
+  background: color-mix(in srgb, var(--lime-100) 54%, var(--surface));
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 900;
+  padding: 2px 6px;
+}
+
 th,
 td {
   border-bottom: 1px solid #e6edbd;
   padding: 12px 10px;
   vertical-align: middle;
+}
+
+th:last-child,
+td.actions,
+td:last-child:has(> .actions) {
+  text-align: right;
+}
+
+td.actions {
+  display: table-cell;
+  white-space: nowrap;
+}
+
+td.actions button {
+  margin-left: 8px;
+}
+
+td.actions button:first-child {
+  margin-left: 0;
+}
+
+td:last-child > .actions {
+  justify-content: flex-end;
 }
 
 td strong,

@@ -6,28 +6,49 @@ import morgan from "morgan";
 import { toNodeHandler } from "better-auth/node";
 import { ZodError } from "zod";
 import { auth } from "./auth.js";
+import { config } from "./config.js";
+import { createRateLimiter } from "./middleware/rateLimit.js";
+import activityLogRoutes from "./routes/activityLogs.js";
+import appointmentRoutes from "./routes/appointments.js";
 import checkupRoutes from "./routes/checkups.js";
 import employeeRoutes from "./routes/employees.js";
 import formRoutes from "./routes/forms.js";
+import medicationRoutes from "./routes/medications.js";
 import patientRoutes from "./routes/patients.js";
 import payrollRoutes from "./routes/payroll.js";
 import userRoutes from "./routes/users.js";
 
 const app = express();
-const port = Number(process.env.PORT ?? 3001);
+const authRateLimit = createRateLimiter({
+	windowMs: 15 * 60 * 1000,
+	max: 40,
+	message: "Too many authentication requests. Please try again later.",
+});
 
 app.use(
 	cors({
-		origin: process.env.CLIENT_ORIGIN ?? "http://localhost:5173",
+		origin(origin, callback) {
+			if (!origin || config.clientOrigins.includes(origin)) {
+				return callback(null, true);
+			}
+
+			const error = new Error("Invalid origin") as Error & { status: number };
+			error.status = 403;
+			return callback(error);
+		},
 		credentials: true,
 	}),
 );
 app.use(helmet());
-app.use(morgan("dev"));
+app.use(morgan(config.isProduction ? "combined" : "dev"));
 
-app.all("/api/auth/*splat", toNodeHandler(auth));
+if (config.isProduction) {
+	app.set("trust proxy", 1);
+}
 
-app.use(express.json());
+app.all("/api/auth/*splat", authRateLimit, toNodeHandler(auth));
+
+app.use(express.json({ limit: config.jsonLimit }));
 
 app.get("/api/health", (_req, res) => {
 	res.json({ ok: true });
@@ -38,6 +59,9 @@ app.use("/api/checkups", checkupRoutes);
 app.use("/api/payroll", payrollRoutes);
 app.use("/api/forms", formRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/activity-logs", activityLogRoutes);
+app.use("/api/medications", medicationRoutes);
+app.use("/api/appointments", appointmentRoutes);
 
 const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
 	if (error instanceof ZodError) {
@@ -46,12 +70,15 @@ const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
 			.json({ error: "Validation failed", details: error.flatten() });
 	}
 
-	console.error(error);
-	return res.status(500).json({ error: "Internal server error" });
+	const status = typeof error.status === "number" ? error.status : 500;
+	if (status >= 500) {
+		console.error(error);
+	}
+	return res.status(status).json({ error: status === 500 ? "Internal server error" : error.message });
 };
 
 app.use(errorHandler);
 
-app.listen(port, () => {
-	console.log(`St. Jude API listening on http://localhost:${port}`);
+app.listen(config.port, () => {
+	console.log(`St. Jude API listening on http://localhost:${config.port}`);
 });

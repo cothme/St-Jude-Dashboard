@@ -1,4 +1,4 @@
-import { AppData, CheckupRecord, Employee, Patient, PayrollRecord, Role, User } from "../types";
+import { ActivityLog, AppData, Appointment, CheckupRecord, Employee, MedicationAdministration, MedicationSchedule, Patient, PayrollRecord, Role, User } from "../types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3001/api";
 
@@ -20,6 +20,8 @@ const statusFromApi = (status: string) => {
   const normalized = status.toLowerCase().replace(/_/g, " ");
   return normalized.replace(/\b\w/g, (char) => char.toUpperCase());
 };
+
+const statusToApi = (status: string) => status.toUpperCase().replace(/\s+/g, "_");
 
 async function apiFetch<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
@@ -52,13 +54,17 @@ export const backendAuth = {
 
 export const backendApi = {
   async loadAppData(): Promise<Partial<AppData>> {
-    const [patients, checkups, employees, payrollRecords, forms, users] = await Promise.all([
+    const [patients, checkups, employees, payrollRecords, forms, users, activityLogs, medicationSchedules, medicationAdministrations, appointments] = await Promise.all([
       apiFetch<{ data: any[] }>("/patients"),
       apiFetch<{ data: any[] }>("/checkups"),
       apiFetch<{ data: any[] }>("/employees"),
       apiFetch<{ data: any[] }>("/payroll").catch(() => ({ data: [] })),
       apiFetch<{ data: any[] }>("/forms"),
       apiFetch<{ data: any[] }>("/users").catch(() => ({ data: [] })),
+      apiFetch<{ data: any[] }>("/activity-logs").catch(() => ({ data: [] })),
+      apiFetch<{ data: any[] }>("/medications/schedules").catch(() => ({ data: [] })),
+      apiFetch<{ data: any[] }>("/medications/administrations").catch(() => ({ data: [] })),
+      apiFetch<{ data: any[] }>("/appointments").catch(() => ({ data: [] })),
     ]);
 
     return {
@@ -77,6 +83,10 @@ export const backendApi = {
         fields: item.fields,
       })),
       users: users.data.map(userFromApi),
+      activityLogs: activityLogs.data.map(activityLogFromApi),
+      medicationSchedules: medicationSchedules.data.map(medicationScheduleFromApi),
+      medicationAdministrations: medicationAdministrations.data.map(medicationAdministrationFromApi),
+      appointments: appointments.data.map(appointmentFromApi),
     };
   },
   createPatient: (patient: Omit<Patient, "id">) => apiFetch<{ data: any }>("/patients", { method: "POST", body: JSON.stringify(patientToApi(patient)) }),
@@ -89,12 +99,30 @@ export const backendApi = {
   updateCheckup: (checkup: CheckupRecord) => apiFetch<{ data: any }>(`/checkups/${checkup.id}`, { method: "PUT", body: JSON.stringify(checkupToApi(checkup)) }),
   deleteCheckup: (id: number) => apiFetch<void>(`/checkups/${id}`, { method: "DELETE" }),
   createPayroll: (record: Omit<PayrollRecord, "id">) => apiFetch<{ data: any }>("/payroll", { method: "POST", body: JSON.stringify(payrollToApi(record)) }),
-  createBulkPayroll: (records: Array<Omit<PayrollRecord, "id">>) => Promise.all(records.map((record) => backendApi.createPayroll(record))),
+  createBulkPayroll: (records: Array<Omit<PayrollRecord, "id">>) => {
+    const first = records[0];
+    if (!first) return Promise.resolve({ data: [] });
+    return apiFetch<{ data: any[] }>("/payroll/bulk", {
+      method: "POST",
+      body: JSON.stringify({
+        employeeIds: records.map((record) => record.employeeId),
+        payPeriodStart: first.payPeriodStart,
+        payPeriodEnd: first.payPeriodEnd,
+        daysWorked: first.daysWorked,
+        overtimeHours: first.overtimeHours,
+        otherDeductions: first.otherDeductions,
+        includeSss: first.sss > 0,
+        includePhilhealth: first.philhealth > 0,
+        includePagibig: first.pagibig > 0,
+        note: first.note,
+      }),
+    });
+  },
   payslipUrl: (id: number) => `${API_BASE_URL}/payroll/${id}/payslip`,
   bulkPayslipUrl: () => `${API_BASE_URL}/payroll/payslips/bulk`,
   deletePayroll: (id: number) => apiFetch<void>(`/payroll/${id}`, { method: "DELETE" }),
   async createUser(user: Omit<User, "id"> & { password?: string }) {
-    const result = await apiFetch<{ data: any }>("/users", { method: "POST", body: JSON.stringify({ name: user.name, email: user.email, password: user.password ?? "Password123!", role: roleToApi(user.role), linkedEmployeeId: user.linkedEmployeeId ?? null }) });
+    const result = await apiFetch<{ data: any }>("/users", { method: "POST", body: JSON.stringify({ name: user.name, email: user.email, password: user.password, role: roleToApi(user.role), linkedEmployeeId: user.linkedEmployeeId ?? null }) });
     rememberUserPhoto(result.data.id, result.data.email, user.profileImageUrl);
     return result;
   },
@@ -103,6 +131,14 @@ export const backendApi = {
     return apiFetch<{ data: any }>(`/users/${user.id}`, { method: "PUT", body: JSON.stringify({ name: user.name, role: roleToApi(user.role), linkedEmployeeId: user.linkedEmployeeId ?? null }) });
   },
   deleteUser: (id: number | string) => apiFetch<void>(`/users/${id}`, { method: "DELETE" }),
+  createActivityLog: (activity: Omit<ActivityLog, "id" | "actorId" | "actorName" | "actorRole" | "timestamp">) => apiFetch<{ data: any }>("/activity-logs", { method: "POST", body: JSON.stringify(activity) }),
+  createMedicationSchedule: (schedule: Omit<MedicationSchedule, "id">) => apiFetch<{ data: any }>("/medications/schedules", { method: "POST", body: JSON.stringify(medicationScheduleToApi(schedule)) }),
+  updateMedicationSchedule: (schedule: MedicationSchedule) => apiFetch<{ data: any }>(`/medications/schedules/${schedule.id}`, { method: "PUT", body: JSON.stringify(medicationScheduleToApi(schedule)) }),
+  deleteMedicationSchedule: (id: number) => apiFetch<void>(`/medications/schedules/${id}`, { method: "DELETE" }),
+  createMedicationAdministration: (record: Omit<MedicationAdministration, "id">) => apiFetch<{ data: any }>("/medications/administrations", { method: "POST", body: JSON.stringify(medicationAdministrationToApi(record)) }),
+  createAppointment: (appointment: Omit<Appointment, "id">) => apiFetch<{ data: any }>("/appointments", { method: "POST", body: JSON.stringify(appointmentToApi(appointment)) }),
+  updateAppointment: (appointment: Appointment) => apiFetch<{ data: any }>(`/appointments/${appointment.id}`, { method: "PUT", body: JSON.stringify(appointmentToApi(appointment)) }),
+  deleteAppointment: (id: number) => apiFetch<void>(`/appointments/${id}`, { method: "DELETE" }),
 };
 
 function employeeFromApi(item: any): Employee {
@@ -197,6 +233,66 @@ function userFromApi(item: any): User {
   };
 }
 
+function activityLogFromApi(item: any): ActivityLog {
+  return {
+    id: item.id,
+    actorId: item.actorId ?? "system",
+    actorName: item.actorName,
+    actorRole: roleFromApi(item.actorRole),
+    action: item.action,
+    entity: item.entity,
+    summary: item.summary,
+    details: Array.isArray(item.details) ? item.details : [],
+    timestamp: item.timestamp,
+    severity: item.severity ?? "info",
+  };
+}
+
+function medicationScheduleFromApi(item: any): MedicationSchedule {
+  return {
+    id: item.id,
+    patientId: item.patientId,
+    medication: item.medication,
+    dosage: item.dosage,
+    route: item.route,
+    frequency: item.frequency,
+    times: Array.isArray(item.times) ? item.times : [],
+    startDate: item.startDate?.slice(0, 10),
+    endDate: item.endDate?.slice(0, 10) ?? undefined,
+    instructions: item.instructions ?? undefined,
+    prescribedBy: item.prescribedBy,
+    status: statusFromApi(item.status) as MedicationSchedule["status"],
+  };
+}
+
+function medicationAdministrationFromApi(item: any): MedicationAdministration {
+  return {
+    id: item.id,
+    scheduleId: item.scheduleId ?? undefined,
+    patientId: item.patientId,
+    medication: item.medication,
+    dosage: item.dosage,
+    administeredAt: item.administeredAt,
+    administeredBy: item.administeredBy,
+    status: statusFromApi(item.status) as MedicationAdministration["status"],
+    notes: item.notes ?? undefined,
+  };
+}
+
+function appointmentFromApi(item: any): Appointment {
+  return {
+    id: item.id,
+    patientId: item.patientId,
+    doctorId: item.doctorId,
+    startsAt: item.startsAt,
+    durationMinutes: item.durationMinutes,
+    reason: item.reason,
+    location: item.location ?? undefined,
+    status: statusFromApi(item.status) as Appointment["status"],
+    notes: item.notes ?? undefined,
+  };
+}
+
 function getStoredUserPhotos() {
   if (typeof localStorage === "undefined") return {};
   try {
@@ -257,5 +353,32 @@ function payrollToApi(record: Omit<PayrollRecord, "id">) {
     includePhilhealth: record.philhealth > 0,
     includePagibig: record.pagibig > 0,
     note: record.note,
+  };
+}
+
+function medicationScheduleToApi(schedule: Omit<MedicationSchedule, "id"> | MedicationSchedule) {
+  return {
+    ...schedule,
+    endDate: schedule.endDate || null,
+    instructions: schedule.instructions || null,
+    status: statusToApi(schedule.status),
+  };
+}
+
+function medicationAdministrationToApi(record: Omit<MedicationAdministration, "id">) {
+  return {
+    ...record,
+    scheduleId: record.scheduleId ?? null,
+    notes: record.notes || null,
+    status: statusToApi(record.status),
+  };
+}
+
+function appointmentToApi(appointment: Omit<Appointment, "id"> | Appointment) {
+  return {
+    ...appointment,
+    location: appointment.location || null,
+    notes: appointment.notes || null,
+    status: statusToApi(appointment.status),
   };
 }

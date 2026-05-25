@@ -43,6 +43,25 @@ enum FormStatus {
   REVIEWED
 }
 
+enum MedicationScheduleStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+}
+
+enum MedicationAdministrationStatus {
+  GIVEN
+  MISSED
+  REFUSED
+  HELD
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
+
 model User {
   id              String    @id
   name            String
@@ -57,6 +76,7 @@ model User {
   sessions        Session[]
   accounts        Account[]
   linkedEmployee  Employee? @relation(fields: [linkedEmployeeId], references: [id])
+  activityLogs    ActivityLog[]
 }
 
 model Session {
@@ -117,6 +137,7 @@ model Employee {
   users           User[]
   attendingPatients Patient[]     @relation("AttendingDoctor")
   checkups        CheckupRecord[] @relation("CheckupDoctor")
+  appointments    Appointment[]   @relation("AppointmentDoctor")
   payrollRecords  PayrollRecord[]
 }
 
@@ -142,6 +163,9 @@ model Patient {
 
   attendingDoctor        Employee?      @relation("AttendingDoctor", fields: [attendingDoctorId], references: [id])
   checkups               CheckupRecord[]
+  medicationSchedules    MedicationSchedule[]
+  medicationAdministrations MedicationAdministration[]
+  appointments           Appointment[]
 }
 
 model CheckupRecord {
@@ -201,4 +225,74 @@ model FormSubmission {
   fields      Json
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
+}
+
+model ActivityLog {
+  id        Int      @id @default(autoincrement())
+  actorId   String?
+  actorName String
+  actorRole Role
+  action    String
+  entity    String
+  summary   String
+  details   Json?
+  severity  String   @default("info")
+  timestamp DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  actor     User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+}
+
+model MedicationSchedule {
+  id           Int                      @id @default(autoincrement())
+  patientId    Int
+  medication   String
+  dosage       String
+  route        String
+  frequency    String
+  times        Json
+  startDate    DateTime
+  endDate      DateTime?
+  instructions String?
+  prescribedBy String
+  status       MedicationScheduleStatus @default(ACTIVE)
+  createdAt    DateTime                 @default(now())
+  updatedAt    DateTime                 @updatedAt
+
+  patient      Patient                  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  administrations MedicationAdministration[]
+}
+
+model MedicationAdministration {
+  id           Int                            @id @default(autoincrement())
+  scheduleId   Int?
+  patientId    Int
+  medication   String
+  dosage       String
+  administeredAt DateTime
+  administeredBy String
+  status       MedicationAdministrationStatus @default(GIVEN)
+  notes        String?
+  createdAt    DateTime                       @default(now())
+  updatedAt    DateTime                       @updatedAt
+
+  schedule     MedicationSchedule?            @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  patient      Patient                        @relation(fields: [patientId], references: [id], onDelete: Cascade)
+}
+
+model Appointment {
+  id          Int               @id @default(autoincrement())
+  patientId   Int
+  doctorId    Int
+  startsAt    DateTime
+  durationMinutes Int           @default(30)
+  reason      String
+  location    String?
+  status      AppointmentStatus @default(SCHEDULED)
+  notes       String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  patient     Patient           @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctor      Employee          @relation("AppointmentDoctor", fields: [doctorId], references: [id])
 }

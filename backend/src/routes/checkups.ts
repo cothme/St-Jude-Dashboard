@@ -65,7 +65,7 @@ router.put("/:id", requireRole(Role.SUPER_ADMIN, Role.DOCTOR, Role.STAFF), async
   res.json({ data: checkup });
 });
 
-router.delete("/:id", requireRole(Role.SUPER_ADMIN, Role.DOCTOR), async (req, res) => {
+router.delete("/:id", requireRole(Role.SUPER_ADMIN), async (req, res) => {
   await prisma.checkupRecord.delete({ where: { id: Number(req.params.id) } });
   res.status(204).send();
 });

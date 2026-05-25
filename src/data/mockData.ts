@@ -75,4 +75,15 @@ export const initialData: AppData = {
       severity: "success",
     },
   ],
+  medicationSchedules: [
+    { id: 1, patientId: 1, medication: "Sertraline", dosage: "50 mg", route: "Oral", frequency: "Once daily", times: ["08:00"], startDate: "2026-05-01", prescribedBy: "Dr. Miguel Cruz", status: "Active", instructions: "Give after breakfast." },
+    { id: 2, patientId: 2, medication: "Quetiapine", dosage: "25 mg", route: "Oral", frequency: "At bedtime", times: ["20:00"], startDate: "2026-05-10", prescribedBy: "Dr. Miguel Cruz", status: "Active", instructions: "Monitor sedation." },
+  ],
+  medicationAdministrations: [
+    { id: 1, scheduleId: 1, patientId: 1, medication: "Sertraline", dosage: "50 mg", administeredAt: "2026-05-25T08:04:00", administeredBy: "Lena Dizon", status: "Given", notes: "Taken with water." },
+  ],
+  appointments: [
+    { id: 1, patientId: 1, doctorId: 1, startsAt: "2026-05-26T09:00:00", durationMinutes: 30, reason: "Follow-up checkup", location: "Consultation Room 1", status: "Scheduled", notes: "Review sleep pattern." },
+    { id: 2, patientId: 2, doctorId: 1, startsAt: "2026-05-26T10:00:00", durationMinutes: 45, reason: "Medication review", location: "Consultation Room 1", status: "Scheduled" },
+  ],
 };

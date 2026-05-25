@@ -1,9 +1,9 @@
 import { Role } from "./types";
 
 export const rolePermissions: Record<Role, string[]> = {
-  "Super admin": ["dashboard", "patients", "checkups", "forms", "employees", "payroll", "users", "activityLogs"],
-  Staff: ["dashboard", "patients", "checkups", "forms", "employees"],
-  Doctor: ["dashboard", "patients", "checkups", "forms"],
+  "Super admin": ["dashboard", "patients", "checkups", "forms", "employees", "payroll", "users", "activityLogs", "medications", "appointments"],
+  Staff: ["dashboard", "patients", "checkups", "forms", "employees", "medications", "appointments"],
+  Doctor: ["dashboard", "patients", "checkups", "forms", "medications", "appointments"],
 };
 
 export const canAccess = (role: Role, permission: string) =>
