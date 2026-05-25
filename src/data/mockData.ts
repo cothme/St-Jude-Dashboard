@@ -2,7 +2,7 @@ import { AppData } from "../types";
 
 export const initialData: AppData = {
   users: [
-    { id: 1, name: "Maria Santos", email: "admin@stjude.local", role: "Super admin", status: "Active" },
+    { id: 1, name: "Cecille Cosme", email: "admin@stjude.local", role: "Super admin", status: "Active" },
     { id: 2, name: "Ana Reyes", email: "staff@stjude.local", role: "Staff", status: "Active", linkedEmployeeId: 3 },
     { id: 3, name: "Dr. Miguel Cruz", email: "doctor@stjude.local", role: "Doctor", status: "Active", linkedEmployeeId: 1 },
   ],
@@ -44,7 +44,7 @@ export const initialData: AppData = {
     {
       id: 1,
       actorId: 1,
-      actorName: "Maria Santos",
+      actorName: "Cecille Cosme",
       actorRole: "Super admin",
       action: "Reviewed",
       entity: "Role access",
@@ -66,7 +66,7 @@ export const initialData: AppData = {
     {
       id: 3,
       actorId: 1,
-      actorName: "Maria Santos",
+      actorName: "Cecille Cosme",
       actorRole: "Super admin",
       action: "Created",
       entity: "Payroll",

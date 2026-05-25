@@ -122,13 +122,11 @@ export const backendApi = {
   bulkPayslipUrl: () => `${API_BASE_URL}/payroll/payslips/bulk`,
   deletePayroll: (id: number) => apiFetch<void>(`/payroll/${id}`, { method: "DELETE" }),
   async createUser(user: Omit<User, "id"> & { password?: string }) {
-    const result = await apiFetch<{ data: any }>("/users", { method: "POST", body: JSON.stringify({ name: user.name, email: user.email, password: user.password, role: roleToApi(user.role), linkedEmployeeId: user.linkedEmployeeId ?? null }) });
-    rememberUserPhoto(result.data.id, result.data.email, user.profileImageUrl);
+    const result = await apiFetch<{ data: any }>("/users", { method: "POST", body: JSON.stringify({ name: user.name, email: user.email, profileImageUrl: user.profileImageUrl || null, password: user.password, role: roleToApi(user.role), linkedEmployeeId: user.linkedEmployeeId ?? null }) });
     return result;
   },
   async updateUser(user: User) {
-    rememberUserPhoto(user.id, user.email, user.profileImageUrl);
-    return apiFetch<{ data: any }>(`/users/${user.id}`, { method: "PUT", body: JSON.stringify({ name: user.name, role: roleToApi(user.role), linkedEmployeeId: user.linkedEmployeeId ?? null }) });
+    return apiFetch<{ data: any }>(`/users/${user.id}`, { method: "PUT", body: JSON.stringify({ name: user.name, profileImageUrl: user.profileImageUrl || null, role: roleToApi(user.role), linkedEmployeeId: user.linkedEmployeeId ?? null }) });
   },
   deleteUser: (id: number | string) => apiFetch<void>(`/users/${id}`, { method: "DELETE" }),
   createActivityLog: (activity: Omit<ActivityLog, "id" | "actorId" | "actorName" | "actorRole" | "timestamp">) => apiFetch<{ data: any }>("/activity-logs", { method: "POST", body: JSON.stringify(activity) }),
@@ -226,7 +224,7 @@ function userFromApi(item: any): User {
     id: item.id,
     name: item.name,
     email: item.email,
-    profileImageUrl: getStoredUserPhoto(item.id, item.email) ?? undefined,
+    profileImageUrl: item.image ?? undefined,
     role: roleFromApi(item.role),
     status: "Active",
     linkedEmployeeId: item.linkedEmployeeId ?? undefined,
@@ -291,31 +289,6 @@ function appointmentFromApi(item: any): Appointment {
     status: statusFromApi(item.status) as Appointment["status"],
     notes: item.notes ?? undefined,
   };
-}
-
-function getStoredUserPhotos() {
-  if (typeof localStorage === "undefined") return {};
-  try {
-    return JSON.parse(localStorage.getItem("stjude-user-photos") ?? "{}") as Record<string, string>;
-  } catch {
-    return {};
-  }
-}
-
-function getStoredUserPhoto(id: number | string, email: string) {
-  const photos = getStoredUserPhotos();
-  return photos[String(id)] ?? photos[`email:${email}`];
-}
-
-function rememberUserPhoto(id: number | string, email: string, value?: string) {
-  if (typeof localStorage === "undefined") return;
-  const photos = getStoredUserPhotos();
-  const keys = [String(id), `email:${email}`];
-  for (const key of keys) {
-    if (value) photos[key] = value;
-    else delete photos[key];
-  }
-  localStorage.setItem("stjude-user-photos", JSON.stringify(photos));
 }
 
 function patientToApi(patient: Patient | Omit<Patient, "id">) {

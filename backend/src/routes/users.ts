@@ -6,6 +6,8 @@ import { AuthedRequest, requireAuth, requireRole } from "../middleware/auth.js";
 import { auth } from "../auth.js";
 
 const router = Router();
+const canonicalSuperAdminEmail = process.env.SUPER_ADMIN_EMAIL ?? "admin@stjude.local";
+const canonicalSuperAdminName = "Cecille Cosme";
 const userUpdateSchema = z.object({
   name: z.string().min(1).optional(),
   profileImageUrl: z.string().nullable().optional(),
@@ -33,6 +35,9 @@ router.get("/", async (_req, res) => {
 
 router.post("/", async (req, res) => {
   const input = userCreateSchema.parse(req.body);
+  if (input.role === Role.SUPER_ADMIN) {
+    return res.status(400).json({ error: `${canonicalSuperAdminName} is the only Super admin account` });
+  }
   await auth.api.signUpEmail({
     body: {
       name: input.name,
@@ -44,7 +49,7 @@ router.post("/", async (req, res) => {
     where: { email: input.email },
     data: {
       role: input.role,
-      image: null,
+      image: input.profileImageUrl ?? null,
       linkedEmployeeId: input.linkedEmployeeId ?? null,
       emailVerified: true,
     },
@@ -58,25 +63,28 @@ router.put("/:id", async (req, res) => {
   const currentUser = (req as AuthedRequest).user;
   const existing = await prisma.user.findUniqueOrThrow({
     where: { id: req.params.id },
-    select: { id: true, role: true },
+    select: { id: true, email: true, role: true },
   });
+  const isCanonicalSuperAdmin = existing.email === canonicalSuperAdminEmail;
+
+  if (!isCanonicalSuperAdmin && input.role === Role.SUPER_ADMIN) {
+    return res.status(400).json({ error: `${canonicalSuperAdminName} is the only Super admin account` });
+  }
 
   if (currentUser?.id === req.params.id && input.role && input.role !== Role.SUPER_ADMIN) {
     return res.status(400).json({ error: "Cannot remove Super admin access from the current user" });
   }
 
-  if (existing.role === Role.SUPER_ADMIN && input.role && input.role !== Role.SUPER_ADMIN) {
-    const superAdminCount = await prisma.user.count({ where: { role: Role.SUPER_ADMIN } });
-    if (superAdminCount <= 1) {
-      return res.status(400).json({ error: "At least one Super admin account is required" });
-    }
+  if (isCanonicalSuperAdmin && input.role && input.role !== Role.SUPER_ADMIN) {
+    return res.status(400).json({ error: `${canonicalSuperAdminName} must remain the Super admin` });
   }
 
   const user = await prisma.user.update({
     where: { id: req.params.id },
     data: {
-      name: input.name,
-      role: input.role,
+      name: isCanonicalSuperAdmin ? canonicalSuperAdminName : input.name,
+      image: input.profileImageUrl,
+      role: isCanonicalSuperAdmin ? Role.SUPER_ADMIN : input.role,
       linkedEmployeeId: input.linkedEmployeeId,
     },
     select: { id: true, name: true, email: true, image: true, role: true, linkedEmployeeId: true, createdAt: true, updatedAt: true },
@@ -90,13 +98,10 @@ router.delete("/:id", async (req, res) => {
   }
   const existing = await prisma.user.findUniqueOrThrow({
     where: { id: req.params.id },
-    select: { role: true },
+    select: { email: true, role: true },
   });
   if (existing.role === Role.SUPER_ADMIN) {
-    const superAdminCount = await prisma.user.count({ where: { role: Role.SUPER_ADMIN } });
-    if (superAdminCount <= 1) {
-      return res.status(400).json({ error: "At least one Super admin account is required" });
-    }
+    return res.status(400).json({ error: "Super admin account cannot be deleted" });
   }
   await prisma.user.delete({ where: { id: req.params.id } });
   return res.status(204).send();

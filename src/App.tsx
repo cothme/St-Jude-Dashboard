@@ -1769,6 +1769,10 @@ function UsersPage() {
   };
 
   const removeUser = async (user: User) => {
+    if (user.role === "Super admin") {
+      showToast("Super admin account cannot be deleted", "error");
+      return;
+    }
     if (user.id === currentUser.id) {
       showToast("You cannot delete the currently signed-in user", "error");
       return;
@@ -1783,7 +1787,7 @@ function UsersPage() {
 
   return (
     <Page title="Users and Roles" action={<button className="primary-btn" onClick={() => setEditing({ name: "", email: "", profileImageUrl: "", role: "Staff", status: "Active", password: "" })}>Add User</button>}>
-      <section className="panel"><div className="table-wrap"><table><thead><tr><SortableHeader label="Name" sortKey="name" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Email" sortKey="email" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Role" sortKey="role" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Status" sortKey="status" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><th></th></tr></thead><tbody>{sortedUsers.map((user) => <tr key={user.id}><td><div className="identity-cell"><Avatar name={user.name} src={user.profileImageUrl} /><strong>{user.name}</strong></div></td><td>{user.email}</td><td><Badge>{user.role}</Badge></td><td>{user.status}</td><td className="actions"><button onClick={() => setEditing(user)}>Edit</button><button className="danger" onClick={() => removeUser(user)}>Delete</button></td></tr>)}</tbody></table></div></section>
+      <section className="panel"><div className="table-wrap"><table><thead><tr><SortableHeader label="Name" sortKey="name" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Email" sortKey="email" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Role" sortKey="role" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Status" sortKey="status" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><th></th></tr></thead><tbody>{sortedUsers.map((user) => <tr key={user.id}><td><div className="identity-cell"><Avatar name={user.name} src={user.profileImageUrl} /><strong>{user.name}</strong></div></td><td>{user.email}</td><td><Badge>{user.role}</Badge></td><td>{user.status}</td><td className="actions"><button onClick={() => setEditing(user)}>Edit</button><button className="danger" disabled={user.role === "Super admin"} onClick={() => removeUser(user)}>Delete</button></td></tr>)}</tbody></table></div></section>
       {editing && <Modal title={"id" in editing ? "Edit User Account" : "Add User Account"} onClose={() => setEditing(null)}>{error && <p className="form-error">{error}</p>}<UserForm user={editing} employees={data.employees} onChange={setEditing} onSubmit={save} onCancel={() => setEditing(null)} /></Modal>}
     </Page>
   );
@@ -1791,14 +1795,15 @@ function UsersPage() {
 
 function UserForm({ user, employees, onChange, onSubmit, onCancel }: { user: UserEditor; employees: Employee[]; onChange: (user: UserEditor) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onCancel: () => void }) {
   const isNew = !("id" in user);
+  const isSuperAdmin = user.role === "Super admin";
   const set = (patch: Partial<UserEditor>) => onChange({ ...user, ...patch });
   return (
     <form className="form-grid" onSubmit={onSubmit}>
       <ProfilePhotoField name={user.name} value={user.profileImageUrl} onChange={(profileImageUrl) => set({ profileImageUrl })} />
-      <input required placeholder="Name" value={user.name} onChange={(e) => set({ name: e.target.value })} />
+      <input required placeholder="Name" value={user.name} disabled={isSuperAdmin} onChange={(e) => set({ name: e.target.value })} />
       <input required type="email" placeholder="Email" value={user.email} onChange={(e) => set({ email: e.target.value })} disabled={!isNew} />
       {isNew && <input required minLength={12} type="password" placeholder="Temporary password" value={user.password ?? ""} onChange={(e) => set({ password: e.target.value })} />}
-      <select value={user.role} onChange={(e) => set({ role: e.target.value as Role })}><option>Super admin</option><option>Staff</option><option>Doctor</option></select>
+      <select value={user.role} disabled={isSuperAdmin} onChange={(e) => set({ role: e.target.value as Role })}>{isSuperAdmin && <option>Super admin</option>}<option>Staff</option><option>Doctor</option></select>
       <select value={user.status} onChange={(e) => set({ status: e.target.value as User["status"] })}><option>Active</option><option>Inactive</option></select>
       <select value={user.linkedEmployeeId ?? ""} onChange={(e) => set({ linkedEmployeeId: e.target.value ? Number(e.target.value) : undefined })}>
         <option value="">No linked employee</option>

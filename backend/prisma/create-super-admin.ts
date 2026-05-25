@@ -7,7 +7,7 @@ import { auth } from "../src/auth.js";
 const prisma = new PrismaClient();
 
 const email = process.env.SUPER_ADMIN_EMAIL ?? "admin@stjude.local";
-const name = process.env.SUPER_ADMIN_NAME ?? "Maria Santos";
+const name = "Cecille Cosme";
 const password = process.env.SUPER_ADMIN_PASSWORD ?? "Password123!";
 
 async function main() {
@@ -43,6 +43,16 @@ async function main() {
 		},
 	});
 
+	const demoted = await prisma.user.updateMany({
+		where: {
+			role: Role.SUPER_ADMIN,
+			id: { not: user.id },
+		},
+		data: {
+			role: Role.STAFF,
+		},
+	});
+
 	const credentialAccount = await prisma.account.findFirst({
 		where: {
 			userId: user.id,
@@ -72,6 +82,9 @@ async function main() {
 
 	console.log(`Super admin ready: ${user.email} (${user.role})`);
 	console.log("Super admin password synced from SUPER_ADMIN_PASSWORD.");
+	if (demoted.count > 0) {
+		console.log(`Demoted ${demoted.count} extra Super admin account(s).`);
+	}
 }
 
 main()
