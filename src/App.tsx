@@ -1353,7 +1353,7 @@ function EmployeeForm({ employee, onChange, onSubmit, onCancel }: { employee: Em
 
 function Payroll() {
   const { data, addPayroll, refreshData, showToast, logActivity } = useApp();
-  const activeEmployees = data.employees.filter((item) => item.status === "Active");
+  const activeEmployees = useMemo(() => data.employees.filter((item) => item.status === "Active"), [data.employees]);
   const [mode, setMode] = useState<"single" | "bulk">("single");
   const [employeeId, setEmployeeId] = useState(data.employees[0]?.id ?? 1);
   const [historyEmployeeId, setHistoryEmployeeId] = useState<number | "all">("all");
@@ -1370,6 +1370,18 @@ function Payroll() {
   const [includePagibig, setIncludePagibig] = useState(true);
   const [periodStart, setPeriodStart] = useState("2026-05-01");
   const [periodEnd, setPeriodEnd] = useState("2026-05-15");
+  useEffect(() => {
+    if (data.employees.length === 0) return;
+    if (!data.employees.some((item) => item.id === employeeId)) {
+      setEmployeeId(data.employees[0].id);
+    }
+  }, [data.employees, employeeId]);
+  useEffect(() => {
+    setSelectedEmployeeIds((current) => {
+      const validIds = current.filter((id) => activeEmployees.some((employee) => employee.id === id));
+      return validIds.length === current.length ? current : validIds;
+    });
+  }, [activeEmployees]);
   const employee = data.employees.find((item) => item.id === employeeId) ?? data.employees[0];
   const createPayrollRecord = (targetEmployee: Employee): Omit<PayrollRecord, "id"> => {
     const dailyRate = targetEmployee.baseSalary / (targetEmployee.workDaysPerWeek === 5 ? 22 : 26);
@@ -1389,7 +1401,7 @@ function Payroll() {
       note: mode === "bulk" ? "Bulk payroll batch" : undefined,
     };
   };
-  const previewRecord = createPayrollRecord(employee);
+  const previewRecord = employee ? createPayrollRecord(employee) : null;
   const bulkPreview = activeEmployees.filter((item) => selectedEmployeeIds.includes(item.id)).map(createPayrollRecord);
   const bulkGross = bulkPreview.reduce((sum, record) => sum + record.grossPay, 0);
   const bulkDeductions = bulkPreview.reduce((sum, record) => sum + record.totalDeductions, 0);
@@ -1412,10 +1424,15 @@ function Payroll() {
   const toggleEmployee = (id: number) => setSelectedEmployeeIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
   const togglePayrollRecord = (id: number) => setSelectedPayrollIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
   const savePayroll = async () => {
-    await backendApi.createPayroll(createPayrollRecord(employee));
-    addPayroll(createPayrollRecord(employee));
+    if (!employee) {
+      showToast("Add an employee before creating payroll", "error");
+      return;
+    }
+    const record = createPayrollRecord(employee);
+    await backendApi.createPayroll(record);
+    addPayroll(record);
     await refreshData();
-    logActivity({ action: "Created", entity: "Payroll", summary: `Created payroll record for ${employeeName(data, employee.id)}.`, details: payrollLogDetails(createPayrollRecord(employee), data), severity: "success" });
+    logActivity({ action: "Created", entity: "Payroll", summary: `Created payroll record for ${employeeName(data, employee.id)}.`, details: payrollLogDetails(record, data), severity: "success" });
     showToast("Payroll record saved", "success");
   };
   const saveBulkPayroll = async () => {
@@ -1483,7 +1500,10 @@ function Payroll() {
           </div>
           <h2>{mode === "single" ? "Payroll Calculator" : "Bulk Payroll Creation"}</h2>
           <div className={`form-grid ${mode === "bulk" ? "bulk-payroll-fields" : ""}`}>
-            <select value={employeeId} onChange={(e) => setEmployeeId(Number(e.target.value))}>{data.employees.map((item) => <option key={item.id} value={item.id}>{item.firstName} {item.lastName} · {item.position}</option>)}</select>
+            <select value={employee?.id ?? ""} disabled={data.employees.length === 0} onChange={(e) => setEmployeeId(Number(e.target.value))}>
+              {data.employees.length === 0 && <option value="">No employees available</option>}
+              {data.employees.map((item) => <option key={item.id} value={item.id}>{item.firstName} {item.lastName} · {item.position}</option>)}
+            </select>
             <label>Days worked<input type="number" value={daysWorked} onChange={(e) => setDaysWorked(Number(e.target.value))} /></label>
             <label>Overtime hours<input type="number" value={overtimeHours} onChange={(e) => setOvertimeHours(Number(e.target.value))} /></label>
             <label>Other deductions<input type="number" value={otherDeductions} onChange={(e) => setOtherDeductions(Number(e.target.value))} /></label>
@@ -1512,8 +1532,9 @@ function Payroll() {
               </div>
             </div>
           )}
-          <div className="payroll-preview"><p><span>{mode === "bulk" ? "Batch gross pay" : "Gross pay"}</span><strong>{formatCurrency(mode === "bulk" ? bulkGross : previewRecord.grossPay)}</strong></p><p><span>{mode === "bulk" ? "Batch deductions" : "Total deductions"}</span><strong>{formatCurrency(mode === "bulk" ? bulkDeductions : previewRecord.totalDeductions)}</strong></p><p><span>{mode === "bulk" ? "Batch net pay" : "Net pay"}</span><strong>{formatCurrency(mode === "bulk" ? bulkNet : previewRecord.netPay)}</strong></p></div>
-          <button className="primary-btn" onClick={mode === "bulk" ? saveBulkPayroll : savePayroll}>{mode === "bulk" ? `Create ${selectedEmployeeIds.length} Payroll Records` : "Save Payroll Record"}</button>
+          <div className="payroll-preview"><p><span>{mode === "bulk" ? "Batch gross pay" : "Gross pay"}</span><strong>{formatCurrency(mode === "bulk" ? bulkGross : previewRecord?.grossPay ?? 0)}</strong></p><p><span>{mode === "bulk" ? "Batch deductions" : "Total deductions"}</span><strong>{formatCurrency(mode === "bulk" ? bulkDeductions : previewRecord?.totalDeductions ?? 0)}</strong></p><p><span>{mode === "bulk" ? "Batch net pay" : "Net pay"}</span><strong>{formatCurrency(mode === "bulk" ? bulkNet : previewRecord?.netPay ?? 0)}</strong></p></div>
+          <button className="primary-btn" disabled={mode === "bulk" ? selectedEmployeeIds.length === 0 : !employee} onClick={mode === "bulk" ? saveBulkPayroll : savePayroll}>{mode === "bulk" ? `Create ${selectedEmployeeIds.length} Payroll Records` : "Save Payroll Record"}</button>
+          {data.employees.length === 0 && <p className="section-note">Add an employee before creating payroll records.</p>}
         </section>
         <section className="panel">
           <div className="payroll-history-header">
