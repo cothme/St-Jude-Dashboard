@@ -1,4 +1,5 @@
 import { Role } from "@prisma/client";
+import { hashPassword, verifyPassword } from "@better-auth/utils/password";
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db.js";
@@ -22,8 +23,46 @@ const userCreateSchema = z.object({
   role: z.nativeEnum(Role).default(Role.STAFF),
   linkedEmployeeId: z.number().nullable().optional(),
 });
+const profileSchema = z.object({
+  name: z.string().min(1),
+  profileImageUrl: z.string().nullable().optional(),
+});
+const passwordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(8),
+});
 
-router.use(requireAuth, requireRole(Role.SUPER_ADMIN));
+router.use(requireAuth);
+
+router.put("/me", async (req, res) => {
+  const input = profileSchema.parse(req.body);
+  const currentUser = (req as AuthedRequest).user;
+  if (!currentUser) return res.status(401).json({ error: "Authentication required" });
+  const isCanonicalSuperAdmin = currentUser.email === canonicalSuperAdminEmail;
+  const user = await prisma.user.update({
+    where: { id: currentUser.id },
+    data: {
+      name: isCanonicalSuperAdmin ? canonicalSuperAdminName : input.name,
+      image: input.profileImageUrl ?? null,
+    },
+    select: { id: true, name: true, email: true, image: true, role: true, linkedEmployeeId: true, createdAt: true, updatedAt: true },
+  });
+  res.json({ data: user });
+});
+
+router.put("/me/password", async (req, res) => {
+  const input = passwordSchema.parse(req.body);
+  const currentUser = (req as AuthedRequest).user;
+  if (!currentUser) return res.status(401).json({ error: "Authentication required" });
+  const account = await prisma.account.findFirst({ where: { userId: currentUser.id, providerId: "credential" } });
+  if (!account?.password) return res.status(400).json({ error: "Password account not found" });
+  const valid = await verifyPassword(account.password, input.currentPassword);
+  if (!valid) return res.status(400).json({ error: "Current password is incorrect" });
+  await prisma.account.update({ where: { id: account.id }, data: { password: await hashPassword(input.newPassword) } });
+  res.json({ data: { ok: true } });
+});
+
+router.use(requireRole(Role.SUPER_ADMIN));
 
 router.get("/", async (_req, res) => {
   const users = await prisma.user.findMany({

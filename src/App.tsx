@@ -24,7 +24,7 @@ import { canAccess } from "./auth";
 import { initialData } from "./data/mockData";
 import { backendApi, backendAuth } from "./services/apiClient";
 import { authService, employeeService, patientService } from "./services/mockServices";
-import { ActivityLog, AppData, Appointment, CareFormSubmission, CheckupRecord, Employee, FormCategory, MedicationAdministration, MedicationSchedule, Patient, PayrollRecord, Role, User } from "./types";
+import { ActivityLog, AppData, Appointment, CareFormSubmission, CheckupRecord, Employee, FormCategory, MedicationAdministration, MedicationSchedule, Patient, PatientDischargeInput, PayrollRecord, Role, User } from "./types";
 import { ageFromBirthDate, calculateBmi, formatCurrency, formatDate, nextId } from "./utils";
 import stJudeLogo from "./assets/stjude-logo.png";
 
@@ -343,6 +343,7 @@ function Login() {
   const [email, setEmail] = useState(showDemoAccounts ? "admin@stjude.local" : "");
   const [password, setPassword] = useState(showDemoAccounts ? "Password123!" : "");
   const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const demoAccounts = [
     { label: "Super admin", email: "admin@stjude.local" },
     { label: "Staff", email: "staff@stjude.local" },
@@ -351,6 +352,7 @@ function Login() {
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setError("");
+    setIsSubmitting(true);
     try {
       await signIn(email, password);
       navigate((location.state as { from?: string } | null)?.from ?? "/");
@@ -358,6 +360,8 @@ function Login() {
       const message = err instanceof Error ? err.message : "Login failed";
       setError(message);
       showToast(message, "error");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -374,17 +378,17 @@ function Login() {
         <h1>St. Jude Administrator Dashboard</h1>
         <p>Secure access for patient care, payroll, staffing, and administrative records.</p>
         <form className="login-form" onSubmit={submit}>
-          <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email" />
-          <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Password" />
+          <input type="email" value={email} disabled={isSubmitting} onChange={(event) => setEmail(event.target.value)} placeholder="Email" />
+          <input type="password" value={password} disabled={isSubmitting} onChange={(event) => setPassword(event.target.value)} placeholder="Password" />
           {error && <p className="form-error">{error}</p>}
-          <button className="primary-btn">Sign In</button>
+          <button className="primary-btn" disabled={isSubmitting}>{isSubmitting ? "Signing in..." : "Sign In"}</button>
         </form>
         {showDemoAccounts && (
           <>
             <p className="login-demo-note">Demo password: <strong>Password123!</strong></p>
             <div className="role-grid">
               {demoAccounts.map((account) => (
-                <button key={account.email} onClick={() => { setEmail(account.email); setPassword("Password123!"); }} className="role-card">
+                <button key={account.email} disabled={isSubmitting} onClick={() => { setEmail(account.email); setPassword("Password123!"); }} className="role-card">
                   <Shield size={22} />
                   <span>{account.label}</span>
                 </button>
@@ -405,16 +409,19 @@ function Guard({ permission, children }: { permission: string; children: ReactNo
 function Layout() {
   const { currentUser, signOut, theme, toggleTheme } = useApp();
   const [open, setOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const visibleNavItems = navItems.filter((item) => canAccess(currentUser.role, item.permission));
+  const compactNav = visibleNavItems.length <= 7;
   return (
     <div className="app-shell">
-      <aside className={`sidebar ${open ? "open" : ""}`}>
+      <aside className={`sidebar ${open ? "open" : ""} ${compactNav ? "compact-nav" : ""}`}>
         <div className="sidebar-brand">
           <img className="sidebar-logo" src={stJudeLogo} alt="St. Jude logo" />
           <div><strong>St. Jude's</strong><span>Care Administration</span></div>
           <button className="icon-btn mobile-only" onClick={() => setOpen(false)}><X size={18} /></button>
         </div>
         <nav>
-          {navItems.filter((item) => canAccess(currentUser.role, item.permission)).map((item) => {
+          {visibleNavItems.map((item) => {
             const Icon = item.icon;
             return <NavLink key={item.to} to={item.to} end={item.to === "/"} onClick={() => setOpen(false)}><Icon size={18} />{item.label}</NavLink>;
           })}
@@ -436,6 +443,10 @@ function Layout() {
           </div>
           <div className="topbar-actions">
             <TopbarClock />
+            <button className="profile-menu-btn" onClick={() => setProfileOpen(true)}>
+              <Avatar name={currentUser.name} src={currentUser.profileImageUrl} />
+              <span>{currentUser.name}</span>
+            </button>
             <button className="theme-toggle" onClick={toggleTheme} aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}>
               {theme === "light" ? <Moon size={17} /> : <Sun size={17} />}
               <span>{theme === "light" ? "Dark" : "Light"}</span>
@@ -445,6 +456,7 @@ function Layout() {
         </header>
         <main><Outlet /></main>
       </div>
+      {profileOpen && <ProfileSettingsModal onClose={() => setProfileOpen(false)} />}
     </div>
   );
 }
@@ -459,7 +471,7 @@ function TopbarClock() {
 
   return (
     <div className="topbar-clock" aria-label="Current time">
-      <strong>{now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</strong>
+      <strong>{now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true })}</strong>
       <span>{now.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" })}</span>
     </div>
   );
@@ -474,7 +486,14 @@ function Dashboard() {
   const activePatients = dashboardPatients.filter((patient) => patient.status !== "Discharged").length;
   const activeEmployees = data.employees.filter((employee) => employee.status === "Active").length;
   const patientIds = new Set(dashboardPatients.map((patient) => patient.id));
-  const upcoming = data.checkups.filter((checkup) => patientIds.has(checkup.patientId) && new Date(checkup.nextAppointment) >= new Date()).slice(0, 4);
+  const upcomingAppointments = data.appointments
+    .filter((appointment) => patientIds.has(appointment.patientId) && appointment.status === "Scheduled" && new Date(appointment.startsAt) >= new Date())
+    .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime())
+    .slice(0, 5);
+  const upcomingMedications = data.medicationSchedules
+    .filter((schedule) => patientIds.has(schedule.patientId) && schedule.status === "Active")
+    .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())
+    .slice(0, 5);
   const observationPatients = dashboardPatients.filter((patient) => patient.status === "Observation").length;
   const admittedPatients = dashboardPatients.filter((patient) => patient.status === "Admitted").length;
   const payrollTotal = data.payrollRecords.reduce((sum, record) => sum + record.netPay, 0);
@@ -484,7 +503,8 @@ function Dashboard() {
     <Page title="Operations Overview" action={<Link className="primary-btn" to="/patients">Open Patients</Link>}>
       <div className="metric-grid">
         <Metric icon={<Users />} label={currentUser.role === "Doctor" ? "Assigned patients" : "Current census"} value={activePatients} note={`${dashboardPatients.length} relevant patient records`} />
-        <Metric icon={<CalendarClock />} label="Upcoming checkups" value={upcoming.length} note="Scheduled follow-up visits" />
+        <Metric icon={<CalendarClock />} label="Upcoming appointments" value={upcomingAppointments.length} note="Scheduled visits ahead" />
+        <Metric icon={<Syringe />} label="Active medications" value={upcomingMedications.length} note="Current medication schedules" />
         {currentUser.role === "Doctor" && <Metric icon={<Activity />} label="Observation" value={observationPatients} note="Patients needing closer review" />}
         {currentUser.role === "Doctor" && <Metric icon={<ClipboardPlus />} label="Admitted" value={admittedPatients} note="Currently admitted assignments" />}
         {canViewEmployees && <Metric icon={<UserRoundCog />} label="Active employees" value={activeEmployees} note="Clinical and custodial staff" />}
@@ -492,18 +512,17 @@ function Dashboard() {
       </div>
       <div className="dashboard-grid">
         <section className="panel">
-          <h2>Upcoming Checkups</h2>
+          <h2>Upcoming Appointments</h2>
           <div className="stack">
-            {upcoming.map((checkup) => <CheckupSummary key={checkup.id} checkup={checkup} />)}
+            {upcomingAppointments.map((appointment) => <AppointmentSummary key={appointment.id} appointment={appointment} />)}
+            {upcomingAppointments.length === 0 && <p className="section-note">No upcoming appointments scheduled.</p>}
           </div>
         </section>
         <section className="panel">
-          <h2>Recent Activity</h2>
-          <div className="timeline">
-            <p><Activity size={16} /> Patient observation updated for Carmen Lopez</p>
-            <p><ClipboardPlus size={16} /> New checkup template prepared</p>
-            {canViewPayroll && <p><Banknote size={16} /> Payroll preview generated for nursing staff</p>}
-            <p><Shield size={16} /> Role access reviewed for Doctor users</p>
+          <h2>Upcoming Medications</h2>
+          <div className="stack">
+            {upcomingMedications.map((schedule) => <MedicationSummary key={schedule.id} schedule={schedule} />)}
+            {upcomingMedications.length === 0 && <p className="section-note">No active medication schedules.</p>}
           </div>
         </section>
       </div>
@@ -561,19 +580,38 @@ const emptyPatient = (doctorId: number): Omit<Patient, "id"> => ({
   firstName: "", lastName: "", profileImageUrl: "", dateOfBirth: "1980-01-01", sex: "Male", civilStatus: "Single", nationality: "Filipino", address: "", contactNumber: "", emergencyContactName: "", emergencyContactNumber: "", attendingDoctorId: doctorId, status: "Admitted", ward: "", admissionDate: new Date().toISOString().slice(0, 10),
 });
 
+const emptyDischarge = (currentUser: User): PatientDischargeInput => ({
+  dischargeDate: new Date().toISOString().slice(0, 10),
+  dischargeReason: "",
+  dischargeCondition: "",
+  dischargeInstructions: "",
+  dischargeMedications: "",
+  dischargeFollowUp: "",
+  dischargedBy: currentUser.name,
+});
+
 function Patients() {
   const { data, currentUser, addPatient, updatePatient, deletePatient, refreshData, showToast, logActivity } = useApp();
   const doctors = data.employees.filter((employee) => employee.position === "Psychiatrist");
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<Patient | Omit<Patient, "id"> | null>(null);
+  const [discharging, setDischarging] = useState<Patient | null>(null);
+  const [dischargeForm, setDischargeForm] = useState<PatientDischargeInput>(() => emptyDischarge(currentUser));
   const [error, setError] = useState("");
+  const [dischargeError, setDischargeError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [isDischarging, setIsDischarging] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(data.patients[0]?.id ?? null);
   const [viewingCheckup, setViewingCheckup] = useState<CheckupRecord | null>(null);
   const [sort, setSort] = useState<SortState<"name" | "age" | "status" | "ward" | "doctor">>({ key: "name", direction: "asc" });
+  const [statusFilter, setStatusFilter] = useState<Patient["status"] | "Active" | "All">("Active");
   const selected = data.patients.find((patient) => patient.id === selectedId) ?? data.patients[0];
-  const filtered = data.patients.filter((patient) => `${patient.firstName} ${patient.lastName} ${patient.ward} ${patient.status}`.toLowerCase().includes(query.toLowerCase()));
+  const filtered = data.patients.filter((patient) => {
+    const matchesQuery = `${patient.firstName} ${patient.lastName} ${patient.ward} ${patient.status}`.toLowerCase().includes(query.toLowerCase());
+    const matchesStatus = statusFilter === "All" || (statusFilter === "Active" ? patient.status !== "Discharged" : patient.status === statusFilter);
+    return matchesQuery && matchesStatus;
+  });
   const sortedPatients = sortItems(filtered, sort, {
     name: (patient) => `${patient.firstName} ${patient.lastName}`,
     age: (patient) => ageFromBirthDate(patient.dateOfBirth),
@@ -633,11 +671,69 @@ function Patients() {
     }
   };
 
+  const openDischarge = (patient: Patient) => {
+    setDischarging(patient);
+    setDischargeError("");
+    setDischargeForm({
+      dischargeDate: patient.dischargeDate ?? new Date().toISOString().slice(0, 10),
+      dischargeReason: patient.dischargeReason ?? "",
+      dischargeCondition: patient.dischargeCondition ?? "",
+      dischargeInstructions: patient.dischargeInstructions ?? "",
+      dischargeMedications: patient.dischargeMedications ?? "",
+      dischargeFollowUp: patient.dischargeFollowUp ?? "",
+      dischargedBy: patient.dischargedBy ?? currentUser.name,
+    });
+  };
+
+  const dischargePatient = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!discharging) return;
+    setDischargeError("");
+    setIsDischarging(true);
+    try {
+      await backendApi.dischargePatient(discharging.id, dischargeForm);
+      const dischargedPatient: Patient = {
+        ...discharging,
+        ...dischargeForm,
+        status: "Discharged",
+        dischargeMedications: dischargeForm.dischargeMedications || undefined,
+        dischargeFollowUp: dischargeForm.dischargeFollowUp || undefined,
+      };
+      updatePatient(dischargedPatient);
+      await refreshData();
+      logActivity({
+        action: "Discharged",
+        entity: "Patient",
+        summary: `Discharged patient ${discharging.firstName} ${discharging.lastName}.`,
+        details: patientDischargeLogDetails(dischargedPatient),
+        severity: "warning",
+      });
+      showToast("Patient discharged", "success");
+      setDischarging(null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to discharge patient";
+      setDischargeError(message);
+      showToast(message, "error");
+    } finally {
+      setIsDischarging(false);
+    }
+  };
+
   return (
     <Page title="Patient Management" action={canManage && <button className="primary-btn" onClick={() => setEditing(emptyPatient(doctors[0]?.id ?? 1))}>Add Patient</button>}>
       <div className="split-layout">
         <section className="panel">
           <SearchBox value={query} onChange={setQuery} placeholder="Search name, ward, status..." />
+          <div className="filter-row">
+            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as Patient["status"] | "Active" | "All")}>
+              <option value="Active">Active patients</option>
+              <option value="All">All patients</option>
+              <option value="Admitted">Admitted</option>
+              <option value="Stable">Stable</option>
+              <option value="Observation">Observation</option>
+              <option value="Discharged">Discharged</option>
+            </select>
+          </div>
           <div className="table-wrap">
             <table>
               <thead><tr><SortableHeader label="Name" sortKey="name" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Age" sortKey="age" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Status" sortKey="status" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Ward" sortKey="ward" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Doctor" sortKey="doctor" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><th></th></tr></thead>
@@ -659,18 +755,20 @@ function Patients() {
             </table>
           </div>
         </section>
-        {selected && <PatientDetail patient={selected} onViewCheckup={setViewingCheckup} />}
+        {selected && <PatientDetail patient={selected} canManage={canManage} onDischarge={openDischarge} onViewCheckup={setViewingCheckup} />}
       </div>
       {editing && <Modal title={"id" in editing ? "Edit Patient Record" : "Add Patient Record"} onClose={() => setEditing(null)}>{error && <p className="form-error">{error}</p>}<PatientForm patient={editing} doctors={doctors} isSaving={isSaving} onChange={setEditing} onSubmit={save} onCancel={() => setEditing(null)} /></Modal>}
+      {discharging && <Modal title={`Discharge ${discharging.firstName} ${discharging.lastName}`} onClose={() => setDischarging(null)}>{dischargeError && <p className="form-error">{dischargeError}</p>}<DischargeForm discharge={dischargeForm} isSaving={isDischarging} onChange={setDischargeForm} onSubmit={dischargePatient} onCancel={() => setDischarging(null)} /></Modal>}
       {viewingCheckup && <CheckupDetailModal checkup={viewingCheckup} onClose={() => setViewingCheckup(null)} />}
     </Page>
   );
 }
 
-function PatientDetail({ patient, onViewCheckup }: { patient: Patient; onViewCheckup: (checkup: CheckupRecord) => void }) {
+function PatientDetail({ patient, canManage, onDischarge, onViewCheckup }: { patient: Patient; canManage: boolean; onDischarge: (patient: Patient) => void; onViewCheckup: (checkup: CheckupRecord) => void }) {
   const { data } = useApp();
   const [historyPage, setHistoryPage] = useState(1);
   const [historyItemsPerPage, setHistoryItemsPerPage] = useState(3);
+  const [viewingDischarge, setViewingDischarge] = useState(false);
   const records = data.checkups
     .filter((checkup) => checkup.patientId === patient.id)
     .sort((a, b) => new Date(b.checkupDate).getTime() - new Date(a.checkupDate).getTime());
@@ -683,13 +781,19 @@ function PatientDetail({ patient, onViewCheckup }: { patient: Patient; onViewChe
 
   return (
     <aside className="panel detail-panel">
-      <div className="profile-heading"><Avatar name={`${patient.firstName} ${patient.lastName}`} src={patient.profileImageUrl} size="lg" /><h2>{patient.firstName} {patient.lastName}</h2></div>
+      <div className="profile-heading"><Avatar name={`${patient.firstName} ${patient.lastName}`} src={patient.profileImageUrl} size="lg" /><h2>{patient.firstName} {patient.lastName}</h2><Badge>{patient.status}</Badge></div>
       <div className="detail-list">
         <p><span>Age</span>{ageFromBirthDate(patient.dateOfBirth)}</p>
         <p><span>Admission</span>{formatDate(patient.admissionDate)}</p>
+        <p><span>Ward / room</span>{patient.status === "Discharged" ? "Discharged" : patient.ward}</p>
         <p><span>Emergency</span>{patient.emergencyContactName} · {patient.emergencyContactNumber}</p>
         <p><span>Address</span>{patient.address}</p>
       </div>
+      {patient.status === "Discharged" ? (
+        <div className="actions"><button className="primary-btn discharge-action-btn" onClick={() => setViewingDischarge(true)}>View Discharge Details</button></div>
+      ) : (
+        canManage && <div className="actions"><button className="primary-btn discharge-action-btn" onClick={() => onDischarge(patient)}>Discharge Patient</button></div>
+      )}
       <div className="checkup-history-header">
         <div>
           <h3>Checkup History</h3>
@@ -704,7 +808,47 @@ function PatientDetail({ patient, onViewCheckup }: { patient: Patient; onViewChe
       ) : (
         <p className="section-note">No checkup records yet.</p>
       )}
+      {viewingDischarge && <DischargeDetailModal patient={patient} onClose={() => setViewingDischarge(false)} />}
     </aside>
+  );
+}
+
+function DischargeDetailModal({ patient, onClose }: { patient: Patient; onClose: () => void }) {
+  return (
+    <Modal title="Discharge Details" onClose={onClose}>
+      <div className="checkup-detail-modal discharge-detail-modal">
+        <div className="detail-list">
+          <p><span>Patient</span>{patient.firstName} {patient.lastName}</p>
+          <p><span>Status</span>{patient.status}</p>
+          <p><span>Admission date</span>{formatDate(patient.admissionDate)}</p>
+          <p><span>Discharge date</span>{patient.dischargeDate ? formatDate(patient.dischargeDate) : "N/A"}</p>
+          <p><span>Follow-up</span>{patient.dischargeFollowUp ? formatDate(patient.dischargeFollowUp) : "Not scheduled"}</p>
+          <p><span>Approved by</span>{patient.dischargedBy || "N/A"}</p>
+        </div>
+        <div className="checkup-detail-notes">
+          <p><span>Reason</span>{patient.dischargeReason || "N/A"}</p>
+          <p><span>Final condition</span>{patient.dischargeCondition || "N/A"}</p>
+          <p><span>Instructions</span>{patient.dischargeInstructions || "N/A"}</p>
+          <p><span>Medications</span>{patient.dischargeMedications || "N/A"}</p>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function DischargeForm({ discharge, isSaving, onChange, onSubmit, onCancel }: { discharge: PatientDischargeInput; isSaving?: boolean; onChange: (discharge: PatientDischargeInput) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onCancel: () => void }) {
+  const set = (patch: Partial<PatientDischargeInput>) => onChange({ ...discharge, ...patch });
+  return (
+    <form className="form-grid" onSubmit={onSubmit}>
+      <label>Discharge date<input required type="date" value={discharge.dischargeDate} onChange={(event) => set({ dischargeDate: event.target.value })} /></label>
+      <input required placeholder="Discharge reason" value={discharge.dischargeReason} onChange={(event) => set({ dischargeReason: event.target.value })} />
+      <textarea required placeholder="Final condition / diagnosis" value={discharge.dischargeCondition} onChange={(event) => set({ dischargeCondition: event.target.value })} />
+      <textarea required placeholder="Discharge instructions" value={discharge.dischargeInstructions} onChange={(event) => set({ dischargeInstructions: event.target.value })} />
+      <textarea placeholder="Medications on discharge" value={discharge.dischargeMedications ?? ""} onChange={(event) => set({ dischargeMedications: event.target.value })} />
+      <label>Follow-up date<input type="date" value={discharge.dischargeFollowUp ?? ""} onChange={(event) => set({ dischargeFollowUp: event.target.value })} /></label>
+      <input required placeholder="Approved by" value={discharge.dischargedBy} onChange={(event) => set({ dischargedBy: event.target.value })} />
+      <div className="form-actions"><button type="button" className="secondary-btn" disabled={isSaving} onClick={onCancel}>Cancel</button><button className="primary-btn" disabled={isSaving}>{isSaving ? "Discharging..." : "Discharge Patient"}</button></div>
+    </form>
   );
 }
 
@@ -721,7 +865,7 @@ function PatientForm({ patient, doctors, isSaving, onChange, onSubmit, onCancel 
       <select value={patient.civilStatus} onChange={(e) => set({ civilStatus: e.target.value as Patient["civilStatus"] })}><option>Single</option><option>Married</option><option>Widowed</option><option>Divorced</option></select>
       <input required placeholder="Nationality" value={patient.nationality} onChange={(e) => set({ nationality: e.target.value })} />
       <input required placeholder="Ward / room" value={patient.ward} onChange={(e) => set({ ward: e.target.value })} />
-      <select value={patient.status} onChange={(e) => set({ status: e.target.value as Patient["status"] })}><option>Admitted</option><option>Stable</option><option>Observation</option><option>Discharged</option></select>
+      <select value={patient.status} onChange={(e) => set({ status: e.target.value as Patient["status"] })}><option>Admitted</option><option>Stable</option><option>Observation</option>{patient.status === "Discharged" && <option>Discharged</option>}</select>
       <select value={patient.attendingDoctorId} onChange={(e) => set({ attendingDoctorId: Number(e.target.value) })}>{doctors.map((doctor) => <option key={doctor.id} value={doctor.id}>{doctorNameFromEmployee(doctor)}</option>)}</select>
       <input placeholder="Contact number" value={patient.contactNumber} onChange={(e) => set({ contactNumber: e.target.value })} />
       <input placeholder="Emergency contact name" value={patient.emergencyContactName} onChange={(e) => set({ emergencyContactName: e.target.value })} />
@@ -732,8 +876,8 @@ function PatientForm({ patient, doctors, isSaving, onChange, onSubmit, onCancel 
   );
 }
 
-const emptyCheckup = (patientId: number, doctorId: number): Omit<CheckupRecord, "id" | "bmi"> => ({
-  patientId, doctorId, checkupDate: new Date().toISOString().slice(0, 10), chiefComplaint: "", symptoms: "", diagnosis: "", prescriptions: "", bloodPressure: "", temperature: 98.6, heartRate: 72, weight: undefined, height: undefined, notes: "", nextAppointment: "",
+const emptyCheckup = (patientId: number, doctorId: number, appointmentId?: number, checkupDate = new Date().toISOString().slice(0, 10)): Omit<CheckupRecord, "id" | "bmi"> => ({
+  patientId, doctorId, appointmentId, checkupDate, chiefComplaint: "", symptoms: "", diagnosis: "", prescriptions: "", bloodPressure: "", temperature: 98.6, heartRate: 72, weight: undefined, height: undefined, notes: "", nextAppointment: "",
 });
 
 function Checkups() {
@@ -747,9 +891,12 @@ function Checkups() {
   const [viewing, setViewing] = useState<CheckupRecord | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
-  const [patientId, setPatientId] = useState(data.patients[0]?.id ?? 1);
   const [checkupPage, setCheckupPage] = useState(1);
   const [checkupItemsPerPage, setCheckupItemsPerPage] = useState(6);
+  const scheduledAppointments = data.appointments.filter((appointment) =>
+    appointment.status === "Scheduled" &&
+    (currentUser.role === "Doctor" ? Boolean(doctorEmployee) && appointment.doctorId === doctorEmployee.id : true)
+  );
   const records = data.checkups
     .filter((record) => currentUser.role === "Doctor" ? Boolean(doctorEmployee) && record.doctorId === doctorEmployee.id : true)
     .sort((a, b) => new Date(b.checkupDate).getTime() - new Date(a.checkupDate).getTime());
@@ -759,23 +906,22 @@ function Checkups() {
   useEffect(() => {
     setCheckupPage(1);
   }, [currentUser.role, records.length]);
-  useEffect(() => {
-    if (data.patients.length === 0) return;
-    if (!data.patients.some((patient) => patient.id === patientId)) {
-      setPatientId(data.patients[0].id);
-    }
-  }, [data.patients, patientId]);
 
-  const startCheckup = (selectedPatientId = patientId) => {
-    if (data.patients.length === 0 || !data.patients.some((patient) => patient.id === selectedPatientId)) {
-      showToast("Select or add a patient before creating a checkup", "error");
+  const startScheduledCheckup = (appointment: Appointment) => {
+    const selectedPatient = data.patients.find((patient) => patient.id === appointment.patientId);
+    if (!selectedPatient) {
+      showToast("Patient record was not found", "error");
       return;
     }
-    if (!doctorEmployee) {
-      showToast("Add or assign a doctor before creating a checkup", "error");
+    if (selectedPatient.status === "Discharged") {
+      showToast("Discharged patients cannot receive routine checkups", "error");
       return;
     }
-    setEditing(emptyCheckup(selectedPatientId, doctorEmployee.id));
+    if (appointment.status !== "Scheduled") {
+      showToast("Only scheduled appointments can be conducted", "error");
+      return;
+    }
+    setEditing(emptyCheckup(appointment.patientId, appointment.doctorId, appointment.id, appointment.startsAt.slice(0, 10)));
   };
 
   const save = async (event: FormEvent<HTMLFormElement>) => {
@@ -836,13 +982,14 @@ function Checkups() {
   };
 
   return (
-    <Page title={currentUser.role === "Doctor" ? "Conduct Checkups" : "Checkup Records"} action={<button className="primary-btn" onClick={() => startCheckup()}>{currentUser.role === "Doctor" ? "Start Checkup" : "Add Checkup"}</button>}>
+    <Page title={currentUser.role === "Doctor" ? "Conduct Checkups" : "Checkup Records"} action={<Link className="primary-btn" to="/appointments">Schedule Appointment</Link>}>
       {currentUser.role === "Doctor" && doctorEmployee && (
         <DoctorCheckupWorkspace
           doctor={doctorEmployee}
           patients={data.patients}
+          appointments={scheduledAppointments}
           records={records}
-          onStart={startCheckup}
+          onStart={startScheduledCheckup}
           onEdit={setEditing}
         />
       )}
@@ -851,12 +998,8 @@ function Checkups() {
         <div className="checkup-list-header">
           <div>
             <h2>{currentUser.role === "Doctor" ? "My Recent Checkups" : "Checkup List"}</h2>
-            <p className="section-note">Newest clinical records are shown first.</p>
+            <p className="section-note">Clinical execution records from completed appointments.</p>
           </div>
-          <select value={data.patients.some((patient) => patient.id === patientId) ? patientId : ""} disabled={data.patients.length === 0} onChange={(e) => setPatientId(Number(e.target.value))}>
-            {data.patients.length === 0 && <option value="">No patients available</option>}
-            {data.patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.firstName} {patient.lastName}</option>)}
-          </select>
         </div>
         <div className="record-grid">
           {checkupPageRecords.map((checkup) => <article className="record-card" key={checkup.id}><CheckupSummary checkup={checkup} /><p>{checkup.diagnosis || "No diagnosis entered"}</p><div className="actions"><button onClick={() => setViewing(checkup)}>View</button><button onClick={() => setEditing(checkup)}>Edit</button>{currentUser.role !== "Doctor" && <button className="danger" disabled={deletingId === checkup.id} onClick={() => removeCheckup(checkup)}>{deletingId === checkup.id ? "Deleting..." : "Delete"}</button>}</div></article>)}
@@ -867,38 +1010,41 @@ function Checkups() {
           <p className="section-note">No checkup records found.</p>
         )}
       </section>
-      {editing && <Modal title={"id" in editing ? "Edit Checkup" : currentUser.role === "Doctor" ? "Conduct Checkup" : "Add Checkup"} onClose={() => setEditing(null)}><CheckupForm checkup={editing} isSaving={isSaving} onChange={setEditing} onSubmit={save} /></Modal>}
+      {editing && <Modal title={"id" in editing ? "Edit Checkup" : "Conduct Scheduled Checkup"} onClose={() => setEditing(null)}><CheckupForm checkup={editing} isSaving={isSaving} onChange={setEditing} onSubmit={save} /></Modal>}
       {viewing && <CheckupDetailModal checkup={viewing} onClose={() => setViewing(null)} />}
     </Page>
   );
 }
 
-function DoctorCheckupWorkspace({ doctor, patients, records, onStart, onEdit }: { doctor: Employee; patients: Patient[]; records: CheckupRecord[]; onStart: (patientId: number) => void; onEdit: (checkup: CheckupRecord) => void }) {
+function DoctorCheckupWorkspace({ doctor, patients, appointments, records, onStart, onEdit }: { doctor: Employee; patients: Patient[]; appointments: Appointment[]; records: CheckupRecord[]; onStart: (appointment: Appointment) => void; onEdit: (checkup: CheckupRecord) => void }) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<Patient["status"] | "All">("All");
   const today = new Date();
   const activePatients = patients.filter((patient) => patient.status !== "Discharged" && patient.attendingDoctorId === doctor.id);
-  const duePatientIds = new Set(records.filter((record) => record.nextAppointment && new Date(record.nextAppointment) <= today).map((record) => record.patientId));
-  const filteredPatients = activePatients.filter((patient) => {
-    const matchesQuery = `${patient.firstName} ${patient.lastName} ${patient.ward} ${patient.status}`.toLowerCase().includes(query.toLowerCase());
+  const queue = appointments.filter((appointment) => appointment.doctorId === doctor.id).sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
+  const filteredAppointments = queue.filter((appointment) => {
+    const patient = patients.find((item) => item.id === appointment.patientId);
+    if (!patient) return false;
+    const matchesQuery = `${patient.firstName} ${patient.lastName} ${patient.ward} ${patient.status} ${appointment.reason}`.toLowerCase().includes(query.toLowerCase());
     const matchesStatus = status === "All" || patient.status === status;
     return matchesQuery && matchesStatus;
   });
   const todaysCheckups = records.filter((record) => new Date(record.checkupDate).toDateString() === today.toDateString());
-  const pendingFollowUps = activePatients.filter((patient) => duePatientIds.has(patient.id));
+  const todaysAppointments = queue.filter((appointment) => new Date(appointment.startsAt).toDateString() === today.toDateString());
 
   return (
     <section className="doctor-checkup-workspace">
       <div className="metric-grid">
         <Metric icon={<Users />} label="Assigned patients" value={activePatients.length} note={`Under ${doctorNameFromEmployee(doctor)}`} />
-        <Metric icon={<CalendarClock />} label="Due follow-ups" value={pendingFollowUps.length} note="Based on next appointment dates" />
+        <Metric icon={<CalendarClock />} label="Scheduled queue" value={queue.length} note="Appointments ready for checkup" />
         <Metric icon={<ClipboardPlus />} label="Completed today" value={todaysCheckups.length} note="Saved checkup records" />
+        <Metric icon={<Activity />} label="Today schedule" value={todaysAppointments.length} note="Appointments booked today" />
       </div>
       <section className="panel">
         <div className="checkup-list-header">
           <div>
-            <h2>Patient Checkup Queue</h2>
-            <p className="section-note">Choose a patient and start a structured clinical checkup.</p>
+            <h2>Appointment Checkup Queue</h2>
+            <p className="section-note">Appointments are the schedule; conducting one creates the checkup record.</p>
           </div>
           <select value={status} onChange={(event) => setStatus(event.target.value as Patient["status"] | "All")}>
             <option>All</option>
@@ -907,32 +1053,34 @@ function DoctorCheckupWorkspace({ doctor, patients, records, onStart, onEdit }: 
             <option>Observation</option>
           </select>
         </div>
-        <SearchBox value={query} onChange={setQuery} placeholder="Search patient, ward, status..." />
+        <SearchBox value={query} onChange={setQuery} placeholder="Search patient, room, reason..." />
         <div className="doctor-queue-grid">
-          {filteredPatients.map((patient) => {
+          {filteredAppointments.map((appointment) => {
+            const patient = patients.find((item) => item.id === appointment.patientId);
+            if (!patient) return null;
             const latestRecord = records.find((record) => record.patientId === patient.id);
-            const isDue = duePatientIds.has(patient.id);
+            const isDue = new Date(appointment.startsAt) <= today;
             return (
-              <article className={`doctor-patient-card ${isDue ? "due" : ""}`} key={patient.id}>
+              <article className={`doctor-patient-card ${isDue ? "due" : ""}`} key={appointment.id}>
                 <div className="identity-cell">
                   <Avatar name={`${patient.firstName} ${patient.lastName}`} src={patient.profileImageUrl} />
                   <span><strong>{patient.firstName} {patient.lastName}</strong><small>{patient.ward} · {patient.status}</small></span>
                 </div>
                 <div className="doctor-patient-meta">
                   <p><span>Age</span>{ageFromBirthDate(patient.dateOfBirth)}</p>
+                  <p><span>Appointment</span>{formatDate(appointment.startsAt)}</p>
                   <p><span>Last checkup</span>{latestRecord ? formatDate(latestRecord.checkupDate) : "No record"}</p>
-                  <p><span>Next appointment</span>{latestRecord?.nextAppointment ? formatDate(latestRecord.nextAppointment) : "Not scheduled"}</p>
                 </div>
-                {latestRecord?.chiefComplaint && <p className="section-note">{latestRecord.chiefComplaint}</p>}
+                <p className="section-note">{appointment.reason}{appointment.location ? ` - ${appointment.location}` : ""}</p>
                 <div className="actions">
-                  <button className="primary-btn conduct-checkup-btn" onClick={() => onStart(patient.id)}>Conduct Checkup</button>
+                  <button className="primary-btn conduct-checkup-btn" onClick={() => onStart(appointment)}>Conduct Checkup</button>
                   {latestRecord && <button className="secondary-btn" onClick={() => onEdit(latestRecord)}>Edit Latest</button>}
                 </div>
               </article>
             );
           })}
         </div>
-        {filteredPatients.length === 0 && <p className="section-note">No assigned patients match the current filters.</p>}
+        {filteredAppointments.length === 0 && <p className="section-note">No scheduled appointments match the current filters.</p>}
       </section>
     </section>
   );
@@ -943,8 +1091,16 @@ function CheckupForm({ checkup, isSaving, onChange, onSubmit }: { checkup: Check
   const doctors = data.employees.filter((employee) => employee.position === "Psychiatrist");
   const set = (patch: Partial<CheckupRecord>) => onChange({ ...checkup, ...patch });
   const bmi = calculateBmi(checkup.weight, checkup.height);
+  const appointment = checkup.appointmentId ? data.appointments.find((item) => item.id === checkup.appointmentId) : undefined;
   return (
     <form className="form-grid" onSubmit={onSubmit}>
+      {appointment && (
+        <div className="form-context-card">
+          <span>Scheduled appointment</span>
+          <strong>{formatDate(appointment.startsAt)} - {appointment.reason}</strong>
+          <small>{appointment.location || "No room assigned"}</small>
+        </div>
+      )}
       <select value={checkup.patientId} onChange={(e) => set({ patientId: Number(e.target.value) })}>{data.patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.firstName} {patient.lastName}</option>)}</select>
       <select value={checkup.doctorId} onChange={(e) => set({ doctorId: Number(e.target.value) })}>{doctors.map((doctor) => <option key={doctor.id} value={doctor.id}>{doctorNameFromEmployee(doctor)}</option>)}</select>
       <label>Checkup date<input type="date" value={checkup.checkupDate} onChange={(e) => set({ checkupDate: e.target.value })} /></label>
@@ -975,13 +1131,17 @@ interface FormTemplate {
 }
 
 function AppointmentsPage() {
-  const { data, currentUser, refreshData, showToast, logActivity, addAppointment, updateAppointment, deleteAppointment } = useApp();
+  const { data, currentUser, refreshData, showToast, logActivity, addAppointment, updateAppointment, deleteAppointment, addCheckup } = useApp();
   const doctors = data.employees.filter((employee) => employee.position === "Psychiatrist");
   const today = new Date().toISOString().slice(0, 10);
   const [editing, setEditing] = useState<Appointment | Omit<Appointment, "id"> | null>(null);
+  const [conducting, setConducting] = useState<Omit<CheckupRecord, "id" | "bmi"> | null>(null);
+  const [checkupError, setCheckupError] = useState("");
+  const [isConducting, setIsConducting] = useState(false);
   const [doctorFilter, setDoctorFilter] = useState<number | "all">("all");
   const [sort, setSort] = useState<SortState<"date" | "patient" | "doctor" | "status" | "reason">>({ key: "date", direction: "asc" });
   const canDelete = currentUser.role === "Super admin";
+  const canConductCheckups = canAccess(currentUser.role, "checkups");
   const visibleAppointments = doctorFilter === "all" ? data.appointments : data.appointments.filter((appointment) => appointment.doctorId === doctorFilter);
   const sortedAppointments = sortItems(visibleAppointments, sort, {
     date: (appointment) => new Date(appointment.startsAt),
@@ -1016,6 +1176,47 @@ function AppointmentsPage() {
     showToast("Appointment deleted", "success");
   };
 
+  const startAppointmentCheckup = (appointment: Appointment) => {
+    const patient = data.patients.find((item) => item.id === appointment.patientId);
+    if (!patient) {
+      showToast("Patient record was not found", "error");
+      return;
+    }
+    if (patient.status === "Discharged") {
+      showToast("Discharged patients cannot receive routine checkups", "error");
+      return;
+    }
+    setCheckupError("");
+    setConducting(emptyCheckup(appointment.patientId, appointment.doctorId, appointment.id, appointment.startsAt.slice(0, 10)));
+  };
+
+  const saveAppointmentCheckup = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!conducting) return;
+    setCheckupError("");
+    setIsConducting(true);
+    try {
+      await backendApi.createCheckup(conducting);
+      addCheckup(conducting);
+      await refreshData();
+      logActivity({
+        action: "Completed",
+        entity: "Checkup",
+        summary: `Completed scheduled checkup for ${patientName(data, conducting.patientId)}.`,
+        details: checkupLogDetails(conducting, data),
+        severity: "success",
+      });
+      showToast("Appointment checkup completed", "success");
+      setConducting(null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to complete checkup";
+      setCheckupError(message);
+      showToast(message, "error");
+    } finally {
+      setIsConducting(false);
+    }
+  };
+
   return (
     <Page title="Appointment Calendar" action={<button className="primary-btn" onClick={() => setEditing({ patientId: data.patients[0]?.id ?? 1, doctorId: doctors[0]?.id ?? 1, startsAt: `${today}T09:00`, durationMinutes: 30, reason: "Follow-up checkup", location: "Consultation Room 1", status: "Scheduled", notes: "" })}>Add Appointment</button>}>
       <section className="metric-grid">
@@ -1030,11 +1231,12 @@ function AppointmentsPage() {
             <div><h2>Calendar List</h2><p className="section-note">Filter by doctor and sort appointments.</p></div>
             <select value={doctorFilter} onChange={(event) => setDoctorFilter(event.target.value === "all" ? "all" : Number(event.target.value))}><option value="all">All doctors</option>{doctors.map((doctor) => <option key={doctor.id} value={doctor.id}>{doctorNameFromEmployee(doctor)}</option>)}</select>
           </div>
-          <div className="table-wrap"><table><thead><tr><SortableHeader label="Date" sortKey="date" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Patient" sortKey="patient" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Doctor" sortKey="doctor" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Reason" sortKey="reason" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Status" sortKey="status" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><th></th></tr></thead><tbody>{sortedAppointments.map((appointment) => <tr key={appointment.id}><td><strong>{formatDate(appointment.startsAt)}</strong><small>{new Date(appointment.startsAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} - {appointment.durationMinutes} min</small></td><td>{patientName(data, appointment.patientId)}</td><td>{doctorName(data, appointment.doctorId)}</td><td>{appointment.reason}</td><td><Badge>{appointment.status}</Badge></td><td className="actions"><button onClick={() => setEditing(appointment)}>Edit</button>{canDelete && <button className="danger" onClick={() => remove(appointment)}>Delete</button>}</td></tr>)}</tbody></table></div>
+          <div className="table-wrap"><table><thead><tr><SortableHeader label="Date" sortKey="date" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Patient" sortKey="patient" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Doctor" sortKey="doctor" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Reason" sortKey="reason" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Status" sortKey="status" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><th></th></tr></thead><tbody>{sortedAppointments.map((appointment) => <tr key={appointment.id}><td><strong>{formatDate(appointment.startsAt)}</strong><small>{appointment.durationMinutes} min</small></td><td>{patientName(data, appointment.patientId)}</td><td>{doctorName(data, appointment.doctorId)}</td><td>{appointment.reason}</td><td><Badge>{appointment.status}</Badge></td><td className="actions">{canConductCheckups && appointment.status === "Scheduled" && <button className="primary-btn table-primary-action" onClick={() => startAppointmentCheckup(appointment)}>Conduct Checkup</button>}<button onClick={() => setEditing(appointment)}>Edit</button>{canDelete && <button className="danger" onClick={() => remove(appointment)}>Delete</button>}</td></tr>)}</tbody></table></div>
         </section>
         <section className="panel"><h2>Doctor Availability</h2><div className="stack">{doctors.map((doctor) => { const count = data.appointments.filter((appointment) => appointment.doctorId === doctor.id && appointment.startsAt.slice(0, 10) === today && appointment.status === "Scheduled").length; return <article className="list-card" key={doctor.id}><strong>{doctorNameFromEmployee(doctor)}</strong><span>{count} scheduled today</span><small>{count >= 6 ? "Heavy schedule" : count >= 3 ? "Moderate schedule" : "Available capacity"}</small></article>; })}</div></section>
       </div>
       {editing && <Modal title={"id" in editing ? "Edit Appointment" : "Add Appointment"} onClose={() => setEditing(null)}><AppointmentForm appointment={editing} patients={data.patients} doctors={doctors} onChange={setEditing} onSubmit={save} onCancel={() => setEditing(null)} /></Modal>}
+      {conducting && <Modal title="Conduct Scheduled Checkup" onClose={() => setConducting(null)}>{checkupError && <p className="form-error">{checkupError}</p>}<CheckupForm checkup={conducting} isSaving={isConducting} onChange={(checkup) => setConducting(checkup as Omit<CheckupRecord, "id" | "bmi">)} onSubmit={saveAppointmentCheckup} /></Modal>}
     </Page>
   );
 }
@@ -1442,6 +1644,21 @@ function EmployeeForm({ employee, isSaving, onChange, onSubmit, onCancel }: { em
   );
 }
 
+function countScheduledWorkDays(start: string, end: string, schedule: 5 | 6) {
+  const startDate = new Date(`${start}T00:00:00`);
+  const endDate = new Date(`${end}T00:00:00`);
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime()) || startDate > endDate) return 0;
+  let count = 0;
+  const cursor = new Date(startDate);
+  while (cursor <= endDate) {
+    const day = cursor.getDay();
+    const isWorkday = schedule === 5 ? day >= 1 && day <= 5 : day >= 1 && day <= 6;
+    if (isWorkday) count += 1;
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return count;
+}
+
 function Payroll() {
   const { data, currentUser, addPayroll, refreshData, showToast, logActivity } = useApp();
   const activeEmployees = useMemo(() => data.employees.filter((item) => item.status === "Active"), [data.employees]);
@@ -1453,7 +1670,6 @@ function Payroll() {
   const [payrollItemsPerPage, setPayrollItemsPerPage] = useState(8);
   const [payrollSort, setPayrollSort] = useState<SortState<"employee" | "period" | "gross" | "deductions" | "net">>({ key: "period", direction: "desc" });
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<number[]>(activeEmployees.map((item) => item.id));
-  const [daysWorked, setDaysWorked] = useState(13);
   const [overtimeHours, setOvertimeHours] = useState(0);
   const [otherDeductions, setOtherDeductions] = useState(0);
   const [includeSss, setIncludeSss] = useState(true);
@@ -1476,15 +1692,16 @@ function Payroll() {
   }, [activeEmployees]);
   const employee = data.employees.find((item) => item.id === employeeId) ?? data.employees[0];
   const createPayrollRecord = (targetEmployee: Employee): Omit<PayrollRecord, "id"> => {
+    const scheduledDaysWorked = countScheduledWorkDays(periodStart, periodEnd, targetEmployee.workDaysPerWeek);
     const dailyRate = targetEmployee.baseSalary / (targetEmployee.workDaysPerWeek === 5 ? 22 : 26);
-    const grossPay = dailyRate * daysWorked + overtimeHours * (dailyRate / 8) * 1.25;
+    const grossPay = dailyRate * scheduledDaysWorked + overtimeHours * (dailyRate / 8) * 1.25;
     const deductions = { sss: includeSss ? 650 : 0, philhealth: includePhilhealth ? 420 : 0, pagibig: includePagibig ? 200 : 0, tax: grossPay * 0.06, otherDeductions };
     const totalDeductions = Object.values(deductions).reduce((sum, value) => sum + value, 0);
     return {
       employeeId: targetEmployee.id,
       payPeriodStart: periodStart,
       payPeriodEnd: periodEnd,
-      daysWorked,
+      daysWorked: scheduledDaysWorked,
       overtimeHours,
       grossPay,
       ...deductions,
@@ -1621,7 +1838,7 @@ function Payroll() {
               {data.employees.length === 0 && <option value="">No employees available</option>}
               {data.employees.map((item) => <option key={item.id} value={item.id}>{item.firstName} {item.lastName} · {item.position}</option>)}
             </select>
-            <label>Days worked<input type="number" value={daysWorked} onChange={(e) => setDaysWorked(Number(e.target.value))} /></label>
+            <label>Days worked<input type="number" readOnly value={previewRecord?.daysWorked ?? 0} /></label>
             <label>Overtime hours<input type="number" value={overtimeHours} onChange={(e) => setOvertimeHours(Number(e.target.value))} /></label>
             <label>Other deductions<input type="number" value={otherDeductions} onChange={(e) => setOtherDeductions(Number(e.target.value))} /></label>
             <label>Pay period start<input type="date" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} /></label>
@@ -1884,6 +2101,89 @@ function UserForm({ user, employees, isSaving, onChange, onSubmit, onCancel }: {
   );
 }
 
+function ProfileSettingsModal({ onClose }: { onClose: () => void }) {
+  const { currentUser, updateUser, refreshData, showToast, logActivity } = useApp();
+  const [name, setName] = useState(currentUser.name);
+  const [profileImageUrl, setProfileImageUrl] = useState(currentUser.profileImageUrl ?? "");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState("");
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const isSuperAdmin = currentUser.role === "Super admin";
+
+  const saveProfile = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError("");
+    setIsSavingProfile(true);
+    try {
+      const result = await backendAuth.updateProfile({ name, profileImageUrl });
+      const updatedUser: User = {
+        ...currentUser,
+        name: result.data.name,
+        profileImageUrl: result.data.image ?? undefined,
+      };
+      updateUser(updatedUser);
+      await refreshData();
+      logActivity({ action: "Updated", entity: "Profile", summary: `${updatedUser.name} updated their profile.`, details: [`Name: ${updatedUser.name}`, `Profile photo: ${updatedUser.profileImageUrl ? "Updated" : "Not set"}`], severity: "success" });
+      showToast("Profile updated", "success");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to update profile";
+      setError(message);
+      showToast(message, "error");
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
+
+  const changePassword = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError("");
+    if (newPassword !== confirmPassword) {
+      setError("New passwords do not match");
+      showToast("New passwords do not match", "error");
+      return;
+    }
+    setIsChangingPassword(true);
+    try {
+      await backendAuth.changePassword(currentPassword, newPassword);
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      logActivity({ action: "Updated", entity: "Password", summary: `${currentUser.name} changed their password.`, severity: "info" });
+      showToast("Password changed", "success");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to change password";
+      setError(message);
+      showToast(message, "error");
+    } finally {
+      setIsChangingPassword(false);
+    }
+  };
+
+  return (
+    <Modal title="Profile Settings" onClose={onClose}>
+      {error && <p className="form-error">{error}</p>}
+      <div className="profile-settings-grid">
+        <form className="form-grid" onSubmit={saveProfile}>
+          <ProfilePhotoField name={name} value={profileImageUrl} onChange={setProfileImageUrl} />
+          <input required placeholder="Display name" value={name} disabled={isSuperAdmin} onChange={(event) => setName(event.target.value)} />
+          {isSuperAdmin && <p className="section-note">The Super admin name is fixed as Cecille Cosme.</p>}
+          <div className="form-actions"><button type="button" className="secondary-btn" disabled={isSavingProfile} onClick={onClose}>Close</button><button className="primary-btn" disabled={isSavingProfile}>{isSavingProfile ? "Saving..." : "Save Profile"}</button></div>
+        </form>
+        <form className="form-grid" onSubmit={changePassword}>
+          <h3>Change Password</h3>
+          <input required type="password" placeholder="Current password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} />
+          <input required minLength={8} type="password" placeholder="New password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
+          <input required minLength={8} type="password" placeholder="Confirm new password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
+          <div className="form-actions"><button className="primary-btn" disabled={isChangingPassword}>{isChangingPassword ? "Changing..." : "Change Password"}</button></div>
+        </form>
+      </div>
+    </Modal>
+  );
+}
+
 function SearchBox({ value, onChange, placeholder }: { value: string; onChange: (value: string) => void; placeholder: string }) {
   return <label className="search-box"><Search size={18} /><input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} /></label>;
 }
@@ -1945,6 +2245,28 @@ function CheckupSummary({ checkup }: { checkup: CheckupRecord }) {
   return <div className="list-card"><strong>{patientName(data, checkup.patientId)}</strong><span>{formatDate(checkup.checkupDate)} · {doctorName(data, checkup.doctorId)}</span><small>{checkup.chiefComplaint || "Routine follow-up"}</small></div>;
 }
 
+function AppointmentSummary({ appointment }: { appointment: Appointment }) {
+  const { data } = useApp();
+  return (
+    <div className="list-card">
+      <strong>{patientName(data, appointment.patientId)}</strong>
+      <span>{formatDate(appointment.startsAt)} - {doctorName(data, appointment.doctorId)}</span>
+      <small>{appointment.reason}{appointment.location ? ` - ${appointment.location}` : ""}</small>
+    </div>
+  );
+}
+
+function MedicationSummary({ schedule }: { schedule: MedicationSchedule }) {
+  const { data } = useApp();
+  return (
+    <div className="list-card">
+      <strong>{schedule.medication} - {schedule.dosage}</strong>
+      <span>{patientName(data, schedule.patientId)} - {schedule.frequency}</span>
+      <small>{schedule.times.length > 0 ? `Times: ${schedule.times.join(", ")}` : "No administration times set"}</small>
+    </div>
+  );
+}
+
 function CheckupHistoryCard({ checkup, onView }: { checkup: CheckupRecord; onView?: (checkup: CheckupRecord) => void }) {
   return (
     <article className="list-card checkup-history-card">
@@ -2003,6 +2325,18 @@ function patientLogDetails(patient: Patient | Omit<Patient, "id">, previous?: Pa
     ["emergencyContactNumber", "Emergency number"],
     ["address", "Address"],
   ]);
+}
+
+function patientDischargeLogDetails(patient: Patient) {
+  return [
+    `Discharge date: ${patient.dischargeDate ? formatDate(patient.dischargeDate) : "N/A"}`,
+    `Reason: ${patient.dischargeReason || "N/A"}`,
+    `Final condition: ${patient.dischargeCondition || "N/A"}`,
+    `Instructions: ${patient.dischargeInstructions || "N/A"}`,
+    `Medications: ${patient.dischargeMedications || "N/A"}`,
+    `Follow-up: ${patient.dischargeFollowUp ? formatDate(patient.dischargeFollowUp) : "Not scheduled"}`,
+    `Approved by: ${patient.dischargedBy || "N/A"}`,
+  ];
 }
 
 function employeeLogDetails(employee: Employee | Omit<Employee, "id">, previous?: Employee) {

@@ -8,6 +8,7 @@ const router = Router();
 const checkupSchema = z.object({
   patientId: z.number(),
   doctorId: z.number(),
+  appointmentId: z.number().optional().nullable(),
   checkupDate: z.string(),
   chiefComplaint: z.string().optional().nullable(),
   symptoms: z.string().optional().nullable(),
@@ -40,6 +41,19 @@ router.get("/", requireRole(Role.SUPER_ADMIN, Role.DOCTOR), async (_req, res) =>
 
 router.post("/", requireRole(Role.SUPER_ADMIN, Role.DOCTOR), async (req, res) => {
   const input = checkupSchema.parse(req.body);
+  const patient = await prisma.patient.findUniqueOrThrow({ where: { id: input.patientId } });
+  if (patient.status === "DISCHARGED") {
+    return res.status(400).json({ error: "Discharged patients cannot receive routine checkups" });
+  }
+  if (input.appointmentId) {
+    const appointment = await prisma.appointment.findUniqueOrThrow({ where: { id: input.appointmentId } });
+    if (appointment.patientId !== input.patientId || appointment.doctorId !== input.doctorId) {
+      return res.status(400).json({ error: "Appointment does not match the selected patient and doctor" });
+    }
+    if (appointment.status !== "SCHEDULED") {
+      return res.status(400).json({ error: "Only scheduled appointments can be conducted" });
+    }
+  }
   const checkup = await prisma.checkupRecord.create({
     data: {
       ...input,
@@ -48,11 +62,24 @@ router.post("/", requireRole(Role.SUPER_ADMIN, Role.DOCTOR), async (req, res) =>
       bmi: bmi(input.weight, input.height),
     },
   });
+  if (input.appointmentId) {
+    await prisma.appointment.update({ where: { id: input.appointmentId }, data: { status: "COMPLETED" } });
+  }
   res.status(201).json({ data: checkup });
 });
 
 router.put("/:id", requireRole(Role.SUPER_ADMIN, Role.DOCTOR), async (req, res) => {
   const input = checkupSchema.parse(req.body);
+  const patient = await prisma.patient.findUniqueOrThrow({ where: { id: input.patientId } });
+  if (patient.status === "DISCHARGED") {
+    return res.status(400).json({ error: "Discharged patients cannot receive routine checkups" });
+  }
+  if (input.appointmentId) {
+    const appointment = await prisma.appointment.findUniqueOrThrow({ where: { id: input.appointmentId } });
+    if (appointment.patientId !== input.patientId || appointment.doctorId !== input.doctorId) {
+      return res.status(400).json({ error: "Appointment does not match the selected patient and doctor" });
+    }
+  }
   const checkup = await prisma.checkupRecord.update({
     where: { id: Number(req.params.id) },
     data: {
@@ -62,6 +89,9 @@ router.put("/:id", requireRole(Role.SUPER_ADMIN, Role.DOCTOR), async (req, res) 
       bmi: bmi(input.weight, input.height),
     },
   });
+  if (input.appointmentId) {
+    await prisma.appointment.update({ where: { id: input.appointmentId }, data: { status: "COMPLETED" } });
+  }
   res.json({ data: checkup });
 });
 

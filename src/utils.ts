@@ -1,8 +1,26 @@
 export const formatCurrency = (value: number) =>
   new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(value);
 
+const dateFromValue = (value: string) => {
+  const dateOnly = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (dateOnly) {
+    const [, year, month, day] = dateOnly;
+    return new Date(Number(year), Number(month) - 1, Number(day), 0, 0, 0);
+  }
+  return new Date(value);
+};
+
 export const formatDate = (value: string) =>
-  value ? new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(value)) : "N/A";
+  value
+    ? new Intl.DateTimeFormat("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      }).format(dateFromValue(value))
+    : "N/A";
 
 export const ageFromBirthDate = (dateOfBirth: string) => {
   const today = new Date();

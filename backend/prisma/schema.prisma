@@ -158,6 +158,13 @@ model Patient {
   status                 PatientStatus  @default(ADMITTED)
   ward                   String
   admissionDate          DateTime
+  dischargeDate          DateTime?
+  dischargeReason        String?
+  dischargeCondition     String?
+  dischargeInstructions  String?
+  dischargeMedications   String?
+  dischargeFollowUp      DateTime?
+  dischargedBy           String?
   createdAt              DateTime       @default(now())
   updatedAt              DateTime       @updatedAt
 
@@ -172,6 +179,7 @@ model CheckupRecord {
   id               Int       @id @default(autoincrement())
   patientId        Int
   doctorId         Int
+  appointmentId    Int?      @unique
   checkupDate      DateTime
   chiefComplaint   String?
   symptoms         String?
@@ -190,6 +198,7 @@ model CheckupRecord {
 
   patient          Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
   doctor           Employee  @relation("CheckupDoctor", fields: [doctorId], references: [id])
+  appointment      Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
 }
 
 model PayrollRecord {
@@ -295,4 +304,5 @@ model Appointment {
 
   patient     Patient           @relation(fields: [patientId], references: [id], onDelete: Cascade)
   doctor      Employee          @relation("AppointmentDoctor", fields: [doctorId], references: [id])
+  checkup     CheckupRecord?
 }

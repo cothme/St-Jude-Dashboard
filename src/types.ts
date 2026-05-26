@@ -27,12 +27,30 @@ export interface Patient {
   status: "Admitted" | "Stable" | "Observation" | "Discharged";
   ward: string;
   admissionDate: string;
+  dischargeDate?: string;
+  dischargeReason?: string;
+  dischargeCondition?: string;
+  dischargeInstructions?: string;
+  dischargeMedications?: string;
+  dischargeFollowUp?: string;
+  dischargedBy?: string;
+}
+
+export interface PatientDischargeInput {
+  dischargeDate: string;
+  dischargeReason: string;
+  dischargeCondition: string;
+  dischargeInstructions: string;
+  dischargeMedications?: string;
+  dischargeFollowUp?: string;
+  dischargedBy: string;
 }
 
 export interface CheckupRecord {
   id: number;
   patientId: number;
   doctorId: number;
+  appointmentId?: number;
   checkupDate: string;
   chiefComplaint: string;
   symptoms: string;

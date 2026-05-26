@@ -1,4 +1,4 @@
-import { ActivityLog, AppData, Appointment, CheckupRecord, Employee, MedicationAdministration, MedicationSchedule, Patient, PayrollRecord, Role, User } from "../types";
+import { ActivityLog, AppData, Appointment, CheckupRecord, Employee, MedicationAdministration, MedicationSchedule, Patient, PatientDischargeInput, PayrollRecord, Role, User } from "../types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3001/api";
 
@@ -50,6 +50,8 @@ export const backendAuth = {
     }),
   signOut: () => apiFetch<any>("/auth/sign-out", { method: "POST" }),
   getSession: () => apiFetch<any>("/auth/get-session"),
+  updateProfile: (profile: { name: string; profileImageUrl?: string }) => apiFetch<{ data: any }>("/users/me", { method: "PUT", body: JSON.stringify({ name: profile.name, profileImageUrl: profile.profileImageUrl || null }) }),
+  changePassword: (currentPassword: string, newPassword: string) => apiFetch<{ data: any }>("/users/me/password", { method: "PUT", body: JSON.stringify({ currentPassword, newPassword }) }),
 };
 
 export const backendApi = {
@@ -91,6 +93,7 @@ export const backendApi = {
   },
   createPatient: (patient: Omit<Patient, "id">) => apiFetch<{ data: any }>("/patients", { method: "POST", body: JSON.stringify(patientToApi(patient)) }),
   updatePatient: (patient: Patient) => apiFetch<{ data: any }>(`/patients/${patient.id}`, { method: "PUT", body: JSON.stringify(patientToApi(patient)) }),
+  dischargePatient: (id: number, discharge: PatientDischargeInput) => apiFetch<{ data: any }>(`/patients/${id}/discharge`, { method: "POST", body: JSON.stringify(discharge) }),
   deletePatient: (id: number) => apiFetch<void>(`/patients/${id}`, { method: "DELETE" }),
   createEmployee: (employee: Omit<Employee, "id">) => apiFetch<{ data: any }>("/employees", { method: "POST", body: JSON.stringify(employeeToApi(employee)) }),
   updateEmployee: (employee: Employee) => apiFetch<{ data: any }>(`/employees/${employee.id}`, { method: "PUT", body: JSON.stringify(employeeToApi(employee)) }),
@@ -175,6 +178,13 @@ function patientFromApi(item: any): Patient {
     status: statusFromApi(item.status) as Patient["status"],
     ward: item.ward,
     admissionDate: item.admissionDate?.slice(0, 10),
+    dischargeDate: item.dischargeDate?.slice(0, 10) ?? undefined,
+    dischargeReason: item.dischargeReason ?? undefined,
+    dischargeCondition: item.dischargeCondition ?? undefined,
+    dischargeInstructions: item.dischargeInstructions ?? undefined,
+    dischargeMedications: item.dischargeMedications ?? undefined,
+    dischargeFollowUp: item.dischargeFollowUp?.slice(0, 10) ?? undefined,
+    dischargedBy: item.dischargedBy ?? undefined,
   };
 }
 
@@ -183,6 +193,7 @@ function checkupFromApi(item: any): CheckupRecord {
     id: item.id,
     patientId: item.patientId,
     doctorId: item.doctorId,
+    appointmentId: item.appointmentId ?? undefined,
     checkupDate: item.checkupDate?.slice(0, 10),
     chiefComplaint: item.chiefComplaint ?? "",
     symptoms: item.symptoms ?? "",
@@ -299,6 +310,13 @@ function patientToApi(patient: Patient | Omit<Patient, "id">) {
     civilStatus: patient.civilStatus.toUpperCase(),
     status: patient.status.toUpperCase(),
     attendingDoctorId: patient.attendingDoctorId || null,
+    dischargeDate: patient.dischargeDate || null,
+    dischargeReason: patient.dischargeReason || null,
+    dischargeCondition: patient.dischargeCondition || null,
+    dischargeInstructions: patient.dischargeInstructions || null,
+    dischargeMedications: patient.dischargeMedications || null,
+    dischargeFollowUp: patient.dischargeFollowUp || null,
+    dischargedBy: patient.dischargedBy || null,
   };
 }
 
