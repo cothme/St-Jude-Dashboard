@@ -44,7 +44,22 @@ app.use(
 		credentials: true,
 	}),
 );
-app.use(helmet());
+app.use(helmet({
+	contentSecurityPolicy: {
+		directives: {
+			defaultSrc: ["'self'"],
+			baseUri: ["'self'"],
+			connectSrc: ["'self'", "https://*.ingest.uploadthing.com", "https://ingest.uploadthing.com", "https://*.ufs.sh"],
+			imgSrc: ["'self'", "data:", "blob:", "https://*.ufs.sh", "https://utfs.io", "https://*.utfs.io"],
+			scriptSrc: ["'self'"],
+			styleSrc: ["'self'", "'unsafe-inline'"],
+			fontSrc: ["'self'", "data:"],
+			objectSrc: ["'none'"],
+			frameAncestors: ["'self'"],
+			upgradeInsecureRequests: config.isProduction ? [] : null,
+		},
+	},
+}));
 app.use(morgan(config.isProduction ? "combined" : "dev"));
 
 if (config.isProduction) {
