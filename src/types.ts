@@ -5,6 +5,7 @@ export interface User {
   name: string;
   email: string;
   profileImageUrl?: string;
+  profileImageKey?: string;
   role: Role;
   status: "Active" | "Inactive";
   linkedEmployeeId?: number;
@@ -15,6 +16,7 @@ export interface Patient {
   firstName: string;
   lastName: string;
   profileImageUrl?: string;
+  profileImageKey?: string;
   dateOfBirth: string;
   sex: "Male" | "Female";
   civilStatus: "Single" | "Married" | "Widowed" | "Divorced";
@@ -72,6 +74,7 @@ export interface Employee {
   firstName: string;
   lastName: string;
   profileImageUrl?: string;
+  profileImageKey?: string;
   position: string;
   department: string;
   email: string;

@@ -141,7 +141,7 @@ textarea:focus-visible {
   flex-direction: column;
   gap: 16px;
   left: 0;
-  overflow-y: auto;
+  overflow: hidden;
   padding: 20px;
   position: fixed;
   top: 0;
@@ -155,6 +155,19 @@ textarea:focus-visible {
   display: flex;
   gap: 12px;
   margin-bottom: 0;
+  min-width: 0;
+}
+
+.sidebar-brand > div {
+  min-width: 0;
+}
+
+.sidebar-brand strong,
+.sidebar-user strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sidebar-brand span,
@@ -231,6 +244,9 @@ textarea:focus-visible {
   gap: clamp(5px, 1vh, 10px);
   justify-content: space-evenly;
   min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
+  scrollbar-gutter: stable;
 }
 
 .sidebar.compact-nav nav {
@@ -248,6 +264,7 @@ textarea:focus-visible {
   border-radius: 8px;
   color: #eef6c7;
   display: flex;
+  flex: 0 0 auto;
   gap: 10px;
   min-height: 40px;
   padding: 9px 12px;
@@ -267,6 +284,7 @@ textarea:focus-visible {
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 8px;
   display: grid;
+  flex: 0 0 auto;
   gap: 8px;
   margin-top: 0;
   padding: 14px;
@@ -366,6 +384,21 @@ textarea:focus-visible {
   padding: 8px;
 }
 
+.photo-field [data-ut-element="button"] {
+  background: var(--button-primary-bg);
+  color: var(--button-primary-text);
+  min-height: 38px;
+}
+
+.photo-field [data-ut-element="button"]:hover {
+  background: var(--button-primary-hover);
+}
+
+.photo-field [data-ut-element="allowed-content"] {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
 .photo-field .secondary-btn {
   justify-self: start;
   min-height: 34px;
@@ -407,6 +440,16 @@ textarea:focus-visible {
   margin: 0;
 }
 
+.topbar h1 {
+  font-size: clamp(22px, 2.2vw, 32px);
+  line-height: 1.12;
+}
+
+.page-header h2 {
+  font-size: clamp(24px, 2.8vw, 36px);
+  line-height: 1.12;
+}
+
 .role-pill,
 .badge {
   background: color-mix(in srgb, var(--lime-100) 55%, var(--surface));
@@ -437,6 +480,11 @@ textarea:focus-visible {
   display: flex;
   gap: 16px;
   justify-content: space-between;
+  min-width: 0;
+}
+
+.page-header > div {
+  min-width: 0;
 }
 
 .primary-btn,
@@ -485,6 +533,7 @@ textarea:focus-visible {
 .actions {
   align-items: center;
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
@@ -526,6 +575,7 @@ textarea:focus-visible {
   align-items: center;
   display: flex;
   gap: 10px;
+  min-width: 0;
 }
 
 .profile-menu-btn {
@@ -538,8 +588,16 @@ textarea:focus-visible {
   font-weight: 800;
   gap: 9px;
   min-height: 42px;
+  max-width: 220px;
+  min-width: 0;
   padding: 4px 10px 4px 5px;
   transition: border-color var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-standard);
+}
+
+.profile-menu-btn span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .profile-menu-btn:hover {
@@ -605,6 +663,7 @@ textarea:focus-visible {
   animation: card-enter 280ms var(--ease-out) both;
   display: grid;
   gap: 7px;
+  min-height: 132px;
   padding: 18px;
 }
 
@@ -639,7 +698,8 @@ td small,
 }
 
 .metric-card strong {
-  font-size: 26px;
+  font-size: clamp(22px, 2.4vw, 26px);
+  line-height: 1.1;
 }
 
 .dashboard-grid,
@@ -671,8 +731,15 @@ td small,
   border-radius: 8px;
   display: grid;
   gap: 5px;
+  min-width: 0;
   padding: 12px;
   transition: border-color var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-standard), background-color var(--duration-fast) var(--ease-standard);
+}
+
+.list-card strong,
+.record-card strong,
+.identity-cell strong {
+  overflow-wrap: anywhere;
 }
 
 .checkup-list,
@@ -1755,6 +1822,23 @@ tbody tr {
   }
 }
 
+@media (max-height: 860px) and (min-width: 821px) {
+  .sidebar nav {
+    gap: 7px;
+    justify-content: flex-start;
+  }
+
+  .sidebar nav a {
+    min-height: 38px;
+    padding-block: 8px;
+  }
+
+  .sidebar-user {
+    gap: 7px;
+    padding: 12px;
+  }
+}
+
 @media (max-width: 820px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -1767,6 +1851,7 @@ tbody tr {
   .sidebar {
     bottom: 0;
     left: 0;
+    overflow: hidden;
     position: fixed;
     top: 0;
     transform: translateX(-105%);
@@ -1841,6 +1926,145 @@ tbody tr {
 
   .checkup-detail-modal .detail-list {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .topbar {
+    align-items: start;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    padding: 14px;
+  }
+
+  .topbar > div:not(.topbar-actions) {
+    min-width: 0;
+  }
+
+  .topbar h1 {
+    font-size: 20px;
+  }
+
+  .topbar-actions {
+    display: grid;
+    gap: 8px;
+    grid-column: 1 / -1;
+    grid-template-columns: minmax(118px, 1fr) repeat(3, auto);
+    justify-content: stretch;
+    width: 100%;
+  }
+
+  .topbar-clock {
+    min-width: 0;
+    padding: 7px 8px;
+    text-align: left;
+  }
+
+  .topbar-clock strong {
+    font-size: 13px;
+  }
+
+  .profile-menu-btn,
+  .theme-toggle,
+  .role-pill {
+    min-height: 38px;
+  }
+
+  .profile-menu-btn {
+    padding-inline: 5px;
+  }
+
+  .theme-toggle span {
+    display: none;
+  }
+
+  .role-pill {
+    align-items: center;
+    justify-content: center;
+    padding-inline: 9px;
+  }
+
+  .page {
+    gap: 14px;
+    padding: 14px;
+  }
+
+  .page-header {
+    gap: 10px;
+  }
+
+  .page-header h2 {
+    font-size: 24px;
+  }
+
+  .page-header .primary-btn,
+  .page-header .secondary-btn {
+    width: 100%;
+  }
+
+  .panel {
+    padding: 14px;
+  }
+
+  .metric-grid {
+    gap: 12px;
+  }
+
+  .metric-card {
+    min-height: 112px;
+    padding: 14px;
+  }
+
+  .metric-card strong {
+    font-size: 22px;
+  }
+
+  .record-grid,
+  .doctor-queue-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .actions button,
+  .actions .primary-btn,
+  .actions .secondary-btn,
+  .actions .danger {
+    min-height: 40px;
+    width: 100%;
+  }
+
+  .photo-field {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 420px) {
+  .topbar-actions {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+
+  .role-pill {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .sidebar {
+    width: min(304px, 88vw);
+  }
+
+  .sidebar-brand {
+    gap: 10px;
+  }
+
+  .sidebar-logo {
+    flex-basis: 46px;
+    height: 46px;
+    width: 46px;
   }
 }
 

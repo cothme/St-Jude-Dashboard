@@ -6,6 +6,7 @@ import morgan from "morgan";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { toNodeHandler } from "better-auth/node";
+import { createRouteHandler } from "uploadthing/express";
 import { ZodError } from "zod";
 import { auth } from "./auth.js";
 import { config } from "./config.js";
@@ -19,6 +20,7 @@ import medicationRoutes from "./routes/medications.js";
 import patientRoutes from "./routes/patients.js";
 import payrollRoutes from "./routes/payroll.js";
 import userRoutes from "./routes/users.js";
+import { uploadManagementRouter, uploadRouter } from "./uploadthing.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -50,6 +52,15 @@ if (config.isProduction) {
 }
 
 app.all("/api/auth/*splat", authRateLimit, toNodeHandler(auth));
+app.use(
+	"/api/uploadthing",
+	createRouteHandler({
+		router: uploadRouter,
+		config: {
+			callbackUrl: process.env.UPLOADTHING_CALLBACK_URL,
+		},
+	}),
+);
 
 app.use(express.json({ limit: config.jsonLimit }));
 
@@ -65,6 +76,7 @@ app.use("/api/users", userRoutes);
 app.use("/api/activity-logs", activityLogRoutes);
 app.use("/api/medications", medicationRoutes);
 app.use("/api/appointments", appointmentRoutes);
+app.use("/api/uploads", uploadManagementRouter);
 
 if (config.isProduction) {
 	const staticDir = path.resolve(__dirname, "../../public");

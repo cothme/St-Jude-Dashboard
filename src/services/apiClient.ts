@@ -50,7 +50,7 @@ export const backendAuth = {
     }),
   signOut: () => apiFetch<any>("/auth/sign-out", { method: "POST" }),
   getSession: () => apiFetch<any>("/auth/get-session"),
-  updateProfile: (profile: { name: string; profileImageUrl?: string }) => apiFetch<{ data: any }>("/users/me", { method: "PUT", body: JSON.stringify({ name: profile.name, profileImageUrl: profile.profileImageUrl || null }) }),
+  updateProfile: (profile: { name: string; profileImageUrl?: string; profileImageKey?: string }) => apiFetch<{ data: any }>("/users/me", { method: "PUT", body: JSON.stringify({ name: profile.name, profileImageUrl: profile.profileImageUrl || null, profileImageKey: profile.profileImageKey || null }) }),
   changePassword: (currentPassword: string, newPassword: string) => apiFetch<{ data: any }>("/users/me/password", { method: "PUT", body: JSON.stringify({ currentPassword, newPassword }) }),
 };
 
@@ -125,11 +125,11 @@ export const backendApi = {
   bulkPayslipUrl: () => `${API_BASE_URL}/payroll/payslips/bulk`,
   deletePayroll: (id: number) => apiFetch<void>(`/payroll/${id}`, { method: "DELETE" }),
   async createUser(user: Omit<User, "id"> & { password?: string }) {
-    const result = await apiFetch<{ data: any }>("/users", { method: "POST", body: JSON.stringify({ name: user.name, email: user.email, profileImageUrl: user.profileImageUrl || null, password: user.password, role: roleToApi(user.role), linkedEmployeeId: user.linkedEmployeeId ?? null }) });
+    const result = await apiFetch<{ data: any }>("/users", { method: "POST", body: JSON.stringify({ name: user.name, email: user.email, profileImageUrl: user.profileImageUrl || null, profileImageKey: user.profileImageKey || null, password: user.password, role: roleToApi(user.role), linkedEmployeeId: user.linkedEmployeeId ?? null }) });
     return result;
   },
   async updateUser(user: User) {
-    return apiFetch<{ data: any }>(`/users/${user.id}`, { method: "PUT", body: JSON.stringify({ name: user.name, profileImageUrl: user.profileImageUrl || null, role: roleToApi(user.role), linkedEmployeeId: user.linkedEmployeeId ?? null }) });
+    return apiFetch<{ data: any }>(`/users/${user.id}`, { method: "PUT", body: JSON.stringify({ name: user.name, profileImageUrl: user.profileImageUrl || null, profileImageKey: user.profileImageKey || null, role: roleToApi(user.role), linkedEmployeeId: user.linkedEmployeeId ?? null }) });
   },
   deleteUser: (id: number | string) => apiFetch<void>(`/users/${id}`, { method: "DELETE" }),
   createActivityLog: (activity: Omit<ActivityLog, "id" | "actorId" | "actorName" | "actorRole" | "timestamp">) => apiFetch<{ data: any }>("/activity-logs", { method: "POST", body: JSON.stringify(activity) }),
@@ -140,6 +140,7 @@ export const backendApi = {
   createAppointment: (appointment: Omit<Appointment, "id">) => apiFetch<{ data: any }>("/appointments", { method: "POST", body: JSON.stringify(appointmentToApi(appointment)) }),
   updateAppointment: (appointment: Appointment) => apiFetch<{ data: any }>(`/appointments/${appointment.id}`, { method: "PUT", body: JSON.stringify(appointmentToApi(appointment)) }),
   deleteAppointment: (id: number) => apiFetch<void>(`/appointments/${id}`, { method: "DELETE" }),
+  deleteUpload: (key: string) => apiFetch<{ data: { success: boolean; deletedCount: number } }>(`/uploads/files/${encodeURIComponent(key)}`, { method: "DELETE" }),
 };
 
 function employeeFromApi(item: any): Employee {
@@ -149,6 +150,7 @@ function employeeFromApi(item: any): Employee {
     firstName: item.firstName,
     lastName: item.lastName,
     profileImageUrl: item.profileImageUrl ?? undefined,
+    profileImageKey: item.profileImageKey ?? undefined,
     position: item.position,
     department: item.department,
     email: item.email ?? "",
@@ -166,6 +168,7 @@ function patientFromApi(item: any): Patient {
     firstName: item.firstName,
     lastName: item.lastName,
     profileImageUrl: item.profileImageUrl ?? undefined,
+    profileImageKey: item.profileImageKey ?? undefined,
     dateOfBirth: item.dateOfBirth?.slice(0, 10),
     sex: item.sex === "FEMALE" ? "Female" : "Male",
     civilStatus: statusFromApi(item.civilStatus) as Patient["civilStatus"],
@@ -236,6 +239,7 @@ function userFromApi(item: any): User {
     name: item.name,
     email: item.email,
     profileImageUrl: item.image ?? undefined,
+    profileImageKey: item.profileImageKey ?? undefined,
     role: roleFromApi(item.role),
     status: "Active",
     linkedEmployeeId: item.linkedEmployeeId ?? undefined,
@@ -306,6 +310,7 @@ function patientToApi(patient: Patient | Omit<Patient, "id">) {
   return {
     ...patient,
     profileImageUrl: patient.profileImageUrl || null,
+    profileImageKey: patient.profileImageKey || null,
     sex: patient.sex.toUpperCase(),
     civilStatus: patient.civilStatus.toUpperCase(),
     status: patient.status.toUpperCase(),
@@ -324,6 +329,7 @@ function employeeToApi(employee: Employee | Omit<Employee, "id">) {
   return {
     ...employee,
     profileImageUrl: employee.profileImageUrl || null,
+    profileImageKey: employee.profileImageKey || null,
     status: employee.status.toUpperCase(),
   };
 }

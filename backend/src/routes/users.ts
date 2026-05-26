@@ -12,6 +12,7 @@ const canonicalSuperAdminName = "Cecille Cosme";
 const userUpdateSchema = z.object({
   name: z.string().min(1).optional(),
   profileImageUrl: z.string().nullable().optional(),
+  profileImageKey: z.string().nullable().optional(),
   role: z.nativeEnum(Role).optional(),
   linkedEmployeeId: z.number().nullable().optional(),
 });
@@ -19,6 +20,7 @@ const userCreateSchema = z.object({
   name: z.string().min(1),
   email: z.string().email(),
   profileImageUrl: z.string().nullable().optional(),
+  profileImageKey: z.string().nullable().optional(),
   password: z.string().min(12),
   role: z.nativeEnum(Role).default(Role.STAFF),
   linkedEmployeeId: z.number().nullable().optional(),
@@ -26,11 +28,13 @@ const userCreateSchema = z.object({
 const profileSchema = z.object({
   name: z.string().min(1),
   profileImageUrl: z.string().nullable().optional(),
+  profileImageKey: z.string().nullable().optional(),
 });
 const passwordSchema = z.object({
   currentPassword: z.string().min(1),
   newPassword: z.string().min(8),
 });
+const userSelect = { id: true, name: true, email: true, image: true, profileImageKey: true, role: true, linkedEmployeeId: true, createdAt: true, updatedAt: true } as any;
 
 router.use(requireAuth);
 
@@ -44,8 +48,9 @@ router.put("/me", async (req, res) => {
     data: {
       name: isCanonicalSuperAdmin ? canonicalSuperAdminName : input.name,
       image: input.profileImageUrl ?? null,
-    },
-    select: { id: true, name: true, email: true, image: true, role: true, linkedEmployeeId: true, createdAt: true, updatedAt: true },
+      profileImageKey: input.profileImageKey ?? null,
+    } as any,
+    select: userSelect,
   });
   res.json({ data: user });
 });
@@ -66,7 +71,7 @@ router.use(requireRole(Role.SUPER_ADMIN));
 
 router.get("/", async (_req, res) => {
   const users = await prisma.user.findMany({
-    select: { id: true, name: true, email: true, image: true, role: true, linkedEmployeeId: true, createdAt: true, updatedAt: true },
+    select: userSelect,
     orderBy: { createdAt: "desc" },
   });
   res.json({ data: users });
@@ -89,10 +94,11 @@ router.post("/", async (req, res) => {
     data: {
       role: input.role,
       image: input.profileImageUrl ?? null,
+      profileImageKey: input.profileImageKey ?? null,
       linkedEmployeeId: input.linkedEmployeeId ?? null,
       emailVerified: true,
-    },
-    select: { id: true, name: true, email: true, image: true, role: true, linkedEmployeeId: true, createdAt: true, updatedAt: true },
+    } as any,
+    select: userSelect,
   });
   res.status(201).json({ data: user });
 });
@@ -123,10 +129,11 @@ router.put("/:id", async (req, res) => {
     data: {
       name: isCanonicalSuperAdmin ? canonicalSuperAdminName : input.name,
       image: input.profileImageUrl,
+      profileImageKey: input.profileImageKey,
       role: isCanonicalSuperAdmin ? Role.SUPER_ADMIN : input.role,
       linkedEmployeeId: input.linkedEmployeeId,
-    },
-    select: { id: true, name: true, email: true, image: true, role: true, linkedEmployeeId: true, createdAt: true, updatedAt: true },
+    } as any,
+    select: userSelect,
   });
   res.json({ data: user });
 });

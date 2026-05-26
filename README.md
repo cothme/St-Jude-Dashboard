@@ -21,6 +21,7 @@ Admin dashboard for a psychiatric and custodial home. The system includes patien
 - Payroll and payslip export
 - User and role management
 - Backend-persisted activity logs
+- UploadThing-backed profile photo storage
 
 ## Local Setup
 
@@ -119,6 +120,14 @@ BETTER_AUTH_SECRET=
 CLIENT_ORIGIN=
 SUPER_ADMIN_EMAIL=
 SUPER_ADMIN_PASSWORD=
+UPLOADTHING_TOKEN=
+UPLOADTHING_CALLBACK_URL=
+```
+
+`UPLOADTHING_CALLBACK_URL` should point to the public backend route, for example:
+
+```env
+UPLOADTHING_CALLBACK_URL="https://your-app.up.railway.app/api/uploadthing"
 ```
 
 ## Security Notes

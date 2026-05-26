@@ -68,6 +68,7 @@ model User {
   email           String    @unique
   emailVerified   Boolean   @default(false)
   image           String?
+  profileImageKey String?
   role            Role      @default(STAFF)
   linkedEmployeeId Int?
   createdAt       DateTime  @default(now())
@@ -123,6 +124,7 @@ model Employee {
   firstName       String
   lastName        String
   profileImageUrl String?
+  profileImageKey String?
   position        String
   department      String
   email           String?
@@ -146,6 +148,7 @@ model Patient {
   firstName              String
   lastName               String
   profileImageUrl        String?
+  profileImageKey        String?
   dateOfBirth            DateTime
   sex                    Sex
   civilStatus            CivilStatus

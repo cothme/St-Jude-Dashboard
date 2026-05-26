@@ -21,10 +21,10 @@ import {
 import { createContext, FormEvent, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Link, Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { canAccess } from "./auth";
-import { initialData } from "./data/mockData";
 import { backendApi, backendAuth } from "./services/apiClient";
 import { authService, employeeService, patientService } from "./services/mockServices";
 import { ActivityLog, AppData, Appointment, CareFormSubmission, CheckupRecord, Employee, FormCategory, MedicationAdministration, MedicationSchedule, Patient, PatientDischargeInput, PayrollRecord, Role, User } from "./types";
+import { UploadButton } from "./uploadthing";
 import { ageFromBirthDate, calculateBmi, formatCurrency, formatDate, nextId } from "./utils";
 import stJudeLogo from "./assets/stjude-logo.png";
 
@@ -32,12 +32,25 @@ type UserEditor = User | (Omit<User, "id"> & { password?: string });
 type SortDirection = "asc" | "desc";
 type SortState<K extends string> = { key: K; direction: SortDirection };
 type SortValue = string | number | Date | null | undefined;
+const emptyAppData: AppData = {
+  patients: [],
+  checkups: [],
+  employees: [],
+  payrollRecords: [],
+  users: [],
+  forms: [],
+  activityLogs: [],
+  medicationSchedules: [],
+  medicationAdministrations: [],
+  appointments: [],
+};
 
 interface AppContextValue {
   data: AppData;
   currentUser: User;
   isAuthenticated: boolean;
   authLoading: boolean;
+  dataLoading: boolean;
   theme: "light" | "dark";
   refreshData: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
@@ -77,16 +90,17 @@ const useApp = () => {
 };
 
 function AppProvider({ children }: { children: ReactNode }) {
-  const [data, setData] = useState<AppData>(initialData);
+  const [data, setData] = useState<AppData>(emptyAppData);
   const [currentUserId, setCurrentUserId] = useState<number | string>(1);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
+  const [dataLoading, setDataLoading] = useState(false);
   const [toasts, setToasts] = useState<Array<{ id: number; message: string; type: "success" | "error" | "info" }>>([]);
   const [theme, setTheme] = useState<"light" | "dark">(() => {
     const stored = localStorage.getItem("stjude-theme");
     return stored === "dark" ? "dark" : "light";
   });
-  const currentUser = data.users.find((user) => user.id === currentUserId) ?? data.users[0];
+  const currentUser = data.users.find((user) => user.id === currentUserId) ?? data.users[0] ?? { id: "loading", name: "Loading", email: "", role: "Staff", status: "Active" as const };
 
   const logActivity = useCallback((activity: Omit<ActivityLog, "id" | "actorId" | "actorName" | "actorRole" | "timestamp">) => {
     setData((current) => {
@@ -113,12 +127,17 @@ function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refreshData = async () => {
-    const loaded = await backendApi.loadAppData();
-    setData((current) => ({
-      ...current,
-      ...loaded,
-      users: loaded.users && loaded.users.length > 0 ? loaded.users : current.users,
-    }));
+    setDataLoading(true);
+    try {
+      const loaded = await backendApi.loadAppData();
+      setData((current) => ({
+        ...current,
+        ...loaded,
+        users: loaded.users && loaded.users.length > 0 ? loaded.users : current.users,
+      }));
+    } finally {
+      setDataLoading(false);
+    }
   };
 
   const signIn = async (email: string, password: string) => {
@@ -167,6 +186,8 @@ function AppProvider({ children }: { children: ReactNode }) {
     await backendAuth.signOut().catch(() => undefined);
     setIsAuthenticated(false);
     setCurrentUserId(1);
+    setData(emptyAppData);
+    setDataLoading(false);
     showToast("Logged out", "info");
   };
 
@@ -199,7 +220,9 @@ function AppProvider({ children }: { children: ReactNode }) {
           setData((current) => ({ ...current, users: [signedInUser, ...current.users.filter((user) => user.id !== signedInUser.id)] }));
           setCurrentUserId(signedInUser.id);
           setIsAuthenticated(true);
-          refreshData().catch((error) => console.error("Failed to refresh app data", error));
+          refreshData().catch((error) => {
+            console.error("Failed to refresh app data", error);
+          });
       } catch {
         if (!cancelled) setIsAuthenticated(false);
       } finally {
@@ -224,6 +247,7 @@ function AppProvider({ children }: { children: ReactNode }) {
     currentUser,
     isAuthenticated,
     authLoading,
+    dataLoading,
     theme,
     refreshData,
     signIn,
@@ -256,7 +280,7 @@ function AppProvider({ children }: { children: ReactNode }) {
     addAppointment: (appointment) => setData((prev) => ({ ...prev, appointments: [{ ...appointment, id: nextId(prev.appointments) }, ...prev.appointments] })),
     updateAppointment: (appointment) => setData((prev) => ({ ...prev, appointments: prev.appointments.map((item) => item.id === appointment.id ? appointment : item) })),
     deleteAppointment: (id) => setData((prev) => ({ ...prev, appointments: prev.appointments.filter((item) => item.id !== id) })),
-  }), [data, currentUser, theme, isAuthenticated, authLoading, showToast, logActivity]);
+  }), [data, currentUser, theme, isAuthenticated, authLoading, dataLoading, showToast, logActivity]);
 
   return <AppContext.Provider value={value}>{children}<ToastViewport toasts={toasts} onDismiss={(id) => setToasts((current) => current.filter((toast) => toast.id !== id))} /></AppContext.Provider>;
 }
@@ -316,7 +340,7 @@ function App() {
 }
 
 function RequireSession({ children }: { children: ReactNode }) {
-  const { isAuthenticated, authLoading } = useApp();
+  const { isAuthenticated, authLoading, dataLoading } = useApp();
   const location = useLocation();
 
   if (authLoading) {
@@ -330,6 +354,15 @@ function RequireSession({ children }: { children: ReactNode }) {
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  }
+
+  if (dataLoading) {
+    return (
+      <main className="loading-page">
+        <img className="loading-logo" src={stJudeLogo} alt="St. Jude Psychiatric and Custodial Home logo" />
+        <strong>Loading records...</strong>
+      </main>
+    );
   }
 
   return <>{children}</>;
@@ -856,7 +889,7 @@ function PatientForm({ patient, doctors, isSaving, onChange, onSubmit, onCancel 
   const set = (patch: Partial<Patient>) => onChange({ ...patient, ...patch });
   return (
     <form className="form-grid" onSubmit={onSubmit}>
-      <ProfilePhotoField name={`${patient.firstName} ${patient.lastName}`} value={patient.profileImageUrl} onChange={(profileImageUrl) => set({ profileImageUrl })} />
+      <ProfilePhotoField name={`${patient.firstName} ${patient.lastName}`} value={patient.profileImageUrl} fileKey={patient.profileImageKey} onChange={(profileImageUrl, profileImageKey) => set({ profileImageUrl, profileImageKey })} />
       <input required placeholder="First name" value={patient.firstName} onChange={(e) => set({ firstName: e.target.value })} />
       <input required placeholder="Last name" value={patient.lastName} onChange={(e) => set({ lastName: e.target.value })} />
       <label>Date of birth<input required type="date" value={patient.dateOfBirth} onChange={(e) => set({ dateOfBirth: e.target.value })} /></label>
@@ -1627,7 +1660,7 @@ function EmployeeForm({ employee, isSaving, onChange, onSubmit, onCancel }: { em
   const set = (patch: Partial<Employee>) => onChange({ ...employee, ...patch });
   return (
     <form className="form-grid" onSubmit={onSubmit}>
-      <ProfilePhotoField name={`${employee.firstName} ${employee.lastName}`} value={employee.profileImageUrl} onChange={(profileImageUrl) => set({ profileImageUrl })} />
+      <ProfilePhotoField name={`${employee.firstName} ${employee.lastName}`} value={employee.profileImageUrl} fileKey={employee.profileImageKey} onChange={(profileImageUrl, profileImageKey) => set({ profileImageUrl, profileImageKey })} />
       <input required placeholder="Employee code" value={employee.employeeCode} onChange={(e) => set({ employeeCode: e.target.value })} />
       <input required placeholder="First name" value={employee.firstName} onChange={(e) => set({ firstName: e.target.value })} />
       <input required placeholder="Last name" value={employee.lastName} onChange={(e) => set({ lastName: e.target.value })} />
@@ -2086,7 +2119,7 @@ function UserForm({ user, employees, isSaving, onChange, onSubmit, onCancel }: {
   const set = (patch: Partial<UserEditor>) => onChange({ ...user, ...patch });
   return (
     <form className="form-grid" onSubmit={onSubmit}>
-      <ProfilePhotoField name={user.name} value={user.profileImageUrl} onChange={(profileImageUrl) => set({ profileImageUrl })} />
+      <ProfilePhotoField name={user.name} value={user.profileImageUrl} fileKey={user.profileImageKey} onChange={(profileImageUrl, profileImageKey) => set({ profileImageUrl, profileImageKey })} />
       <input required placeholder="Name" value={user.name} disabled={isSuperAdmin} onChange={(e) => set({ name: e.target.value })} />
       <input required type="email" placeholder="Email" value={user.email} onChange={(e) => set({ email: e.target.value })} disabled={!isNew} />
       {isNew && <input required minLength={12} type="password" placeholder="Temporary password" value={user.password ?? ""} onChange={(e) => set({ password: e.target.value })} />}
@@ -2105,6 +2138,7 @@ function ProfileSettingsModal({ onClose }: { onClose: () => void }) {
   const { currentUser, updateUser, refreshData, showToast, logActivity } = useApp();
   const [name, setName] = useState(currentUser.name);
   const [profileImageUrl, setProfileImageUrl] = useState(currentUser.profileImageUrl ?? "");
+  const [profileImageKey, setProfileImageKey] = useState(currentUser.profileImageKey ?? "");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -2118,11 +2152,12 @@ function ProfileSettingsModal({ onClose }: { onClose: () => void }) {
     setError("");
     setIsSavingProfile(true);
     try {
-      const result = await backendAuth.updateProfile({ name, profileImageUrl });
+      const result = await backendAuth.updateProfile({ name, profileImageUrl, profileImageKey });
       const updatedUser: User = {
         ...currentUser,
         name: result.data.name,
         profileImageUrl: result.data.image ?? undefined,
+        profileImageKey: result.data.profileImageKey ?? undefined,
       };
       updateUser(updatedUser);
       await refreshData();
@@ -2167,7 +2202,7 @@ function ProfileSettingsModal({ onClose }: { onClose: () => void }) {
       {error && <p className="form-error">{error}</p>}
       <div className="profile-settings-grid">
         <form className="form-grid" onSubmit={saveProfile}>
-          <ProfilePhotoField name={name} value={profileImageUrl} onChange={setProfileImageUrl} />
+          <ProfilePhotoField name={name} value={profileImageUrl} fileKey={profileImageKey} onChange={(url, key) => { setProfileImageUrl(url); setProfileImageKey(key ?? ""); }} />
           <input required placeholder="Display name" value={name} disabled={isSuperAdmin} onChange={(event) => setName(event.target.value)} />
           {isSuperAdmin && <p className="section-note">The Super admin name is fixed as Cecille Cosme.</p>}
           <div className="form-actions"><button type="button" className="secondary-btn" disabled={isSavingProfile} onClick={onClose}>Close</button><button className="primary-btn" disabled={isSavingProfile}>{isSavingProfile ? "Saving..." : "Save Profile"}</button></div>
@@ -2193,12 +2228,31 @@ function Avatar({ name, src, size = "sm" }: { name: string; src?: string; size?:
   return <div className={`avatar ${size === "lg" ? "avatar-lg" : ""}`}>{src ? <img src={src} alt={`${name} profile`} /> : <span>{initials}</span>}</div>;
 }
 
-function ProfilePhotoField({ name, value, onChange }: { name: string; value?: string; onChange: (value: string) => void }) {
-  const handleFile = (file?: File) => {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => onChange(String(reader.result ?? ""));
-    reader.readAsDataURL(file);
+function ProfilePhotoField({ name, value, fileKey, onChange }: { name: string; value?: string; fileKey?: string; onChange: (value: string, key?: string) => void }) {
+  const { showToast } = useApp();
+  const [isRemoving, setIsRemoving] = useState(false);
+  const uploadReady = Boolean(import.meta.env.VITE_UPLOADTHING_ENABLED ?? true);
+  const uploadedFileInfo = (file: unknown) => {
+    const item = file as { url?: string; ufsUrl?: string; appUrl?: string; key?: string; fileKey?: string; customId?: string };
+    return {
+      url: item.ufsUrl ?? item.url ?? item.appUrl ?? "",
+      key: item.key ?? item.fileKey ?? item.customId ?? "",
+    };
+  };
+
+  const removePhoto = async () => {
+    setIsRemoving(true);
+    try {
+      if (fileKey) {
+        await backendApi.deleteUpload(fileKey);
+        showToast("Profile photo deleted from UploadThing", "success");
+      }
+      onChange("", "");
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Failed to delete profile photo", "error");
+    } finally {
+      setIsRemoving(false);
+    }
   };
 
   return (
@@ -2206,9 +2260,25 @@ function ProfilePhotoField({ name, value, onChange }: { name: string; value?: st
       <Avatar name={name} src={value} size="lg" />
       <div>
         <strong>Profile picture</strong>
-        <span>PNG or JPG. Stored as a demo data URL for now.</span>
-        <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => handleFile(event.target.files?.[0])} />
-        {value && <button type="button" className="secondary-btn" onClick={() => onChange("")}>Remove photo</button>}
+        <span>PNG, JPG, or WebP. Stored in UploadThing.</span>
+        {uploadReady ? (
+          <UploadButton
+            endpoint="profileImage"
+            onClientUploadComplete={(files) => {
+              const uploaded = uploadedFileInfo(files?.[0]);
+              if (uploaded.url) {
+                onChange(uploaded.url, uploaded.key);
+                showToast("Profile photo uploaded", "success");
+              }
+            }}
+            onUploadError={(error: Error) => {
+              showToast(error.message || "Profile photo upload failed", "error");
+            }}
+          />
+        ) : (
+          <span>UploadThing is not configured.</span>
+        )}
+        {value && <button type="button" className="secondary-btn" disabled={isRemoving} onClick={removePhoto}>{isRemoving ? "Removing..." : "Remove photo"}</button>}
       </div>
     </div>
   );
