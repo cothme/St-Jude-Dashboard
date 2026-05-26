@@ -10,3 +10,6 @@ yarn-error.log*
 pnpm-debug.log*
 backend-start*.log
 *.log
+backups/
+backend/backups/
+*.dump

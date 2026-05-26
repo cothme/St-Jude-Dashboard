@@ -11,7 +11,11 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "seed": "tsx prisma/seed.ts",
-    "seed:super-admin": "tsx prisma/create-super-admin.ts"
+    "seed:super-admin": "tsx prisma/create-super-admin.ts",
+    "backup:db": "tsx scripts/backup-db.ts",
+    "restore:db": "tsx scripts/restore-db.ts",
+    "backup:db:compiled": "node dist/scripts/backup-db.js",
+    "restore:db:compiled": "node dist/scripts/restore-db.js"
   },
   "dependencies": {
     "@better-auth/prisma-adapter": "^1.4.5",
