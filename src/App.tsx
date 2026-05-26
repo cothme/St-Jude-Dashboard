@@ -596,6 +596,18 @@ function normalizeSortValue(value: SortValue) {
   return value;
 }
 
+function discardDraftProfilePhoto(draftKey: string | undefined, savedKey: string | undefined, showToast: AppContextValue["showToast"]) {
+  if (!draftKey || draftKey === savedKey) return;
+  backendApi.deleteUpload(draftKey)
+    .then(() => showToast("Discarded unsaved profile photo", "info"))
+    .catch(() => showToast("Could not delete the unsaved profile photo", "error"));
+}
+
+function deleteReplacedProfilePhoto(savedKey?: string, nextKey?: string) {
+  if (!savedKey || savedKey === nextKey) return;
+  backendApi.deleteUpload(savedKey).catch(() => undefined);
+}
+
 function SortableHeader<K extends string>({ label, sortKey, sort, onSort }: { label: string; sortKey: K; sort: SortState<K>; onSort: (key: K) => void }) {
   const active = sort.key === sortKey;
   return (
@@ -654,6 +666,13 @@ function Patients() {
   });
   const canManage = currentUser.role !== "Doctor";
 
+  const closeEditor = () => {
+    const previous = editing && "id" in editing ? data.patients.find((patient) => patient.id === editing.id) : undefined;
+    discardDraftProfilePhoto(editing?.profileImageKey, previous?.profileImageKey, showToast);
+    setEditing(null);
+    setError("");
+  };
+
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!editing) return;
@@ -669,6 +688,7 @@ function Patients() {
         addPatient(editing);
       }
       await refreshData();
+      deleteReplacedProfilePhoto(previous?.profileImageKey, editing.profileImageKey);
       logActivity({
         action: "Saved",
         entity: "Patient",
@@ -790,7 +810,7 @@ function Patients() {
         </section>
         {selected && <PatientDetail patient={selected} canManage={canManage} onDischarge={openDischarge} onViewCheckup={setViewingCheckup} />}
       </div>
-      {editing && <Modal title={"id" in editing ? "Edit Patient Record" : "Add Patient Record"} onClose={() => setEditing(null)}>{error && <p className="form-error">{error}</p>}<PatientForm patient={editing} doctors={doctors} isSaving={isSaving} onChange={setEditing} onSubmit={save} onCancel={() => setEditing(null)} /></Modal>}
+      {editing && <Modal title={"id" in editing ? "Edit Patient Record" : "Add Patient Record"} onClose={closeEditor}>{error && <p className="form-error">{error}</p>}<PatientForm patient={editing} doctors={doctors} savedProfileImageKey={editing && "id" in editing ? data.patients.find((patient) => patient.id === editing.id)?.profileImageKey : undefined} isSaving={isSaving} onChange={setEditing} onSubmit={save} onCancel={closeEditor} /></Modal>}
       {discharging && <Modal title={`Discharge ${discharging.firstName} ${discharging.lastName}`} onClose={() => setDischarging(null)}>{dischargeError && <p className="form-error">{dischargeError}</p>}<DischargeForm discharge={dischargeForm} isSaving={isDischarging} onChange={setDischargeForm} onSubmit={dischargePatient} onCancel={() => setDischarging(null)} /></Modal>}
       {viewingCheckup && <CheckupDetailModal checkup={viewingCheckup} onClose={() => setViewingCheckup(null)} />}
     </Page>
@@ -885,11 +905,11 @@ function DischargeForm({ discharge, isSaving, onChange, onSubmit, onCancel }: { 
   );
 }
 
-function PatientForm({ patient, doctors, isSaving, onChange, onSubmit, onCancel }: { patient: Patient | Omit<Patient, "id">; doctors: Employee[]; isSaving?: boolean; onChange: (patient: Patient | Omit<Patient, "id">) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onCancel: () => void }) {
+function PatientForm({ patient, doctors, savedProfileImageKey, isSaving, onChange, onSubmit, onCancel }: { patient: Patient | Omit<Patient, "id">; doctors: Employee[]; savedProfileImageKey?: string; isSaving?: boolean; onChange: (patient: Patient | Omit<Patient, "id">) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onCancel: () => void }) {
   const set = (patch: Partial<Patient>) => onChange({ ...patient, ...patch });
   return (
     <form className="form-grid" onSubmit={onSubmit}>
-      <ProfilePhotoField name={`${patient.firstName} ${patient.lastName}`} value={patient.profileImageUrl} fileKey={patient.profileImageKey} onChange={(profileImageUrl, profileImageKey) => set({ profileImageUrl, profileImageKey })} />
+      <ProfilePhotoField name={`${patient.firstName} ${patient.lastName}`} value={patient.profileImageUrl} fileKey={patient.profileImageKey} savedFileKey={savedProfileImageKey} onChange={(profileImageUrl, profileImageKey) => set({ profileImageUrl, profileImageKey })} />
       <input required placeholder="First name" value={patient.firstName} onChange={(e) => set({ firstName: e.target.value })} />
       <input required placeholder="Last name" value={patient.lastName} onChange={(e) => set({ lastName: e.target.value })} />
       <label>Date of birth<input required type="date" value={patient.dateOfBirth} onChange={(e) => set({ dateOfBirth: e.target.value })} /></label>
@@ -1597,6 +1617,13 @@ function Employees() {
     schedule: (employee) => employee.workDaysPerWeek,
     status: (employee) => employee.status,
   });
+  const closeEditor = () => {
+    const previous = editing && "id" in editing ? data.employees.find((employee) => employee.id === editing.id) : undefined;
+    discardDraftProfilePhoto(editing?.profileImageKey, previous?.profileImageKey, showToast);
+    setEditing(null);
+    setError("");
+  };
+
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!editing) return;
@@ -1612,6 +1639,7 @@ function Employees() {
         addEmployee(editing);
       }
       await refreshData();
+      deleteReplacedProfilePhoto(previous?.profileImageKey, editing.profileImageKey);
       logActivity({
         action: "Saved",
         entity: "Employee",
@@ -1651,16 +1679,16 @@ function Employees() {
         <SearchBox value={query} onChange={setQuery} placeholder="Search employees..." />
         <div className="table-wrap"><table><thead><tr><SortableHeader label="Employee" sortKey="employee" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Position" sortKey="position" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Department" sortKey="department" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Salary" sortKey="salary" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Schedule" sortKey="schedule" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Status" sortKey="status" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><th></th></tr></thead><tbody>{sortedEmployees.map((employee) => <tr key={employee.id}><td><div className="identity-cell"><Avatar name={`${employee.firstName} ${employee.lastName}`} src={employee.profileImageUrl} /><span><strong>{employee.firstName} {employee.lastName}</strong><small>{employee.employeeCode}</small></span></div></td><td>{employee.position}</td><td>{employee.department}</td><td>{formatCurrency(employee.baseSalary)}</td><td>{employee.workDaysPerWeek}-day</td><td><Badge>{employee.status}</Badge></td><td className="actions"><button onClick={() => setEditing(employee)}>Edit</button><button className="danger" disabled={deletingId === employee.id} onClick={() => removeEmployee(employee)}>{deletingId === employee.id ? "Deleting..." : "Delete"}</button></td></tr>)}</tbody></table></div>
       </section>
-      {editing && <Modal title={"id" in editing ? "Edit Employee Record" : "Add Employee Record"} onClose={() => setEditing(null)}>{error && <p className="form-error">{error}</p>}<EmployeeForm employee={editing} isSaving={isSaving} onChange={setEditing} onSubmit={save} onCancel={() => setEditing(null)} /></Modal>}
+      {editing && <Modal title={"id" in editing ? "Edit Employee Record" : "Add Employee Record"} onClose={closeEditor}>{error && <p className="form-error">{error}</p>}<EmployeeForm employee={editing} savedProfileImageKey={editing && "id" in editing ? data.employees.find((employee) => employee.id === editing.id)?.profileImageKey : undefined} isSaving={isSaving} onChange={setEditing} onSubmit={save} onCancel={closeEditor} /></Modal>}
     </Page>
   );
 }
 
-function EmployeeForm({ employee, isSaving, onChange, onSubmit, onCancel }: { employee: Employee | Omit<Employee, "id">; isSaving?: boolean; onChange: (employee: Employee | Omit<Employee, "id">) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onCancel: () => void }) {
+function EmployeeForm({ employee, savedProfileImageKey, isSaving, onChange, onSubmit, onCancel }: { employee: Employee | Omit<Employee, "id">; savedProfileImageKey?: string; isSaving?: boolean; onChange: (employee: Employee | Omit<Employee, "id">) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onCancel: () => void }) {
   const set = (patch: Partial<Employee>) => onChange({ ...employee, ...patch });
   return (
     <form className="form-grid" onSubmit={onSubmit}>
-      <ProfilePhotoField name={`${employee.firstName} ${employee.lastName}`} value={employee.profileImageUrl} fileKey={employee.profileImageKey} onChange={(profileImageUrl, profileImageKey) => set({ profileImageUrl, profileImageKey })} />
+      <ProfilePhotoField name={`${employee.firstName} ${employee.lastName}`} value={employee.profileImageUrl} fileKey={employee.profileImageKey} savedFileKey={savedProfileImageKey} onChange={(profileImageUrl, profileImageKey) => set({ profileImageUrl, profileImageKey })} />
       <input required placeholder="Employee code" value={employee.employeeCode} onChange={(e) => set({ employeeCode: e.target.value })} />
       <input required placeholder="First name" value={employee.firstName} onChange={(e) => set({ firstName: e.target.value })} />
       <input required placeholder="Last name" value={employee.lastName} onChange={(e) => set({ lastName: e.target.value })} />
@@ -2048,6 +2076,13 @@ function UsersPage() {
     role: (user) => user.role,
     status: (user) => user.status,
   });
+  const closeEditor = () => {
+    const previous = editing && "id" in editing ? data.users.find((user) => user.id === editing.id) : undefined;
+    discardDraftProfilePhoto(editing?.profileImageKey, previous?.profileImageKey, showToast);
+    setEditing(null);
+    setError("");
+  };
+
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!editing) return;
@@ -2063,6 +2098,7 @@ function UsersPage() {
         addUser(editing);
       }
       await refreshData();
+      deleteReplacedProfilePhoto(previous?.profileImageKey, editing.profileImageKey);
       logActivity({
         action: "Saved",
         entity: "User",
@@ -2108,18 +2144,18 @@ function UsersPage() {
   return (
     <Page title="Users and Roles" action={<button className="primary-btn" onClick={() => setEditing({ name: "", email: "", profileImageUrl: "", role: "Staff", status: "Active", password: "" })}>Add User</button>}>
       <section className="panel"><div className="table-wrap"><table><thead><tr><SortableHeader label="Name" sortKey="name" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Email" sortKey="email" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Role" sortKey="role" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Status" sortKey="status" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><th></th></tr></thead><tbody>{sortedUsers.map((user) => <tr key={user.id}><td><div className="identity-cell"><Avatar name={user.name} src={user.profileImageUrl} /><strong>{user.name}</strong></div></td><td>{user.email}</td><td><Badge>{user.role}</Badge></td><td>{user.status}</td><td className="actions"><button onClick={() => setEditing(user)}>Edit</button><button className="danger" disabled={user.role === "Super admin" || deletingId === user.id} onClick={() => removeUser(user)}>{deletingId === user.id ? "Deleting..." : "Delete"}</button></td></tr>)}</tbody></table></div></section>
-      {editing && <Modal title={"id" in editing ? "Edit User Account" : "Add User Account"} onClose={() => setEditing(null)}>{error && <p className="form-error">{error}</p>}<UserForm user={editing} employees={data.employees} isSaving={isSaving} onChange={setEditing} onSubmit={save} onCancel={() => setEditing(null)} /></Modal>}
+      {editing && <Modal title={"id" in editing ? "Edit User Account" : "Add User Account"} onClose={closeEditor}>{error && <p className="form-error">{error}</p>}<UserForm user={editing} employees={data.employees} savedProfileImageKey={editing && "id" in editing ? data.users.find((user) => user.id === editing.id)?.profileImageKey : undefined} isSaving={isSaving} onChange={setEditing} onSubmit={save} onCancel={closeEditor} /></Modal>}
     </Page>
   );
 }
 
-function UserForm({ user, employees, isSaving, onChange, onSubmit, onCancel }: { user: UserEditor; employees: Employee[]; isSaving?: boolean; onChange: (user: UserEditor) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onCancel: () => void }) {
+function UserForm({ user, employees, savedProfileImageKey, isSaving, onChange, onSubmit, onCancel }: { user: UserEditor; employees: Employee[]; savedProfileImageKey?: string; isSaving?: boolean; onChange: (user: UserEditor) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onCancel: () => void }) {
   const isNew = !("id" in user);
   const isSuperAdmin = user.role === "Super admin";
   const set = (patch: Partial<UserEditor>) => onChange({ ...user, ...patch });
   return (
     <form className="form-grid" onSubmit={onSubmit}>
-      <ProfilePhotoField name={user.name} value={user.profileImageUrl} fileKey={user.profileImageKey} onChange={(profileImageUrl, profileImageKey) => set({ profileImageUrl, profileImageKey })} />
+      <ProfilePhotoField name={user.name} value={user.profileImageUrl} fileKey={user.profileImageKey} savedFileKey={savedProfileImageKey} onChange={(profileImageUrl, profileImageKey) => set({ profileImageUrl, profileImageKey })} />
       <input required placeholder="Name" value={user.name} disabled={isSuperAdmin} onChange={(e) => set({ name: e.target.value })} />
       <input required type="email" placeholder="Email" value={user.email} onChange={(e) => set({ email: e.target.value })} disabled={!isNew} />
       {isNew && <input required minLength={12} type="password" placeholder="Temporary password" value={user.password ?? ""} onChange={(e) => set({ password: e.target.value })} />}
@@ -2139,6 +2175,7 @@ function ProfileSettingsModal({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState(currentUser.name);
   const [profileImageUrl, setProfileImageUrl] = useState(currentUser.profileImageUrl ?? "");
   const [profileImageKey, setProfileImageKey] = useState(currentUser.profileImageKey ?? "");
+  const [savedProfileImageKey, setSavedProfileImageKey] = useState(currentUser.profileImageKey ?? "");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -2161,6 +2198,8 @@ function ProfileSettingsModal({ onClose }: { onClose: () => void }) {
       };
       updateUser(updatedUser);
       await refreshData();
+      deleteReplacedProfilePhoto(savedProfileImageKey, updatedUser.profileImageKey);
+      setSavedProfileImageKey(updatedUser.profileImageKey ?? "");
       logActivity({ action: "Updated", entity: "Profile", summary: `${updatedUser.name} updated their profile.`, details: [`Name: ${updatedUser.name}`, `Profile photo: ${updatedUser.profileImageUrl ? "Updated" : "Not set"}`], severity: "success" });
       showToast("Profile updated", "success");
     } catch (err) {
@@ -2197,15 +2236,20 @@ function ProfileSettingsModal({ onClose }: { onClose: () => void }) {
     }
   };
 
+  const closeProfileSettings = () => {
+    discardDraftProfilePhoto(profileImageKey, savedProfileImageKey, showToast);
+    onClose();
+  };
+
   return (
-    <Modal title="Profile Settings" onClose={onClose}>
+    <Modal title="Profile Settings" onClose={closeProfileSettings}>
       {error && <p className="form-error">{error}</p>}
       <div className="profile-settings-grid">
         <form className="form-grid" onSubmit={saveProfile}>
-          <ProfilePhotoField name={name} value={profileImageUrl} fileKey={profileImageKey} onChange={(url, key) => { setProfileImageUrl(url); setProfileImageKey(key ?? ""); }} />
+          <ProfilePhotoField name={name} value={profileImageUrl} fileKey={profileImageKey} savedFileKey={savedProfileImageKey} onChange={(url, key) => { setProfileImageUrl(url); setProfileImageKey(key ?? ""); }} />
           <input required placeholder="Display name" value={name} disabled={isSuperAdmin} onChange={(event) => setName(event.target.value)} />
           {isSuperAdmin && <p className="section-note">The Super admin name is fixed as Cecille Cosme.</p>}
-          <div className="form-actions"><button type="button" className="secondary-btn" disabled={isSavingProfile} onClick={onClose}>Close</button><button className="primary-btn" disabled={isSavingProfile}>{isSavingProfile ? "Saving..." : "Save Profile"}</button></div>
+          <div className="form-actions"><button type="button" className="secondary-btn" disabled={isSavingProfile} onClick={closeProfileSettings}>Close</button><button className="primary-btn" disabled={isSavingProfile}>{isSavingProfile ? "Saving..." : "Save Profile"}</button></div>
         </form>
         <form className="form-grid" onSubmit={changePassword}>
           <h3>Change Password</h3>
@@ -2228,7 +2272,7 @@ function Avatar({ name, src, size = "sm" }: { name: string; src?: string; size?:
   return <div className={`avatar ${size === "lg" ? "avatar-lg" : ""}`}>{src ? <img src={src} alt={`${name} profile`} /> : <span>{initials}</span>}</div>;
 }
 
-function ProfilePhotoField({ name, value, fileKey, onChange }: { name: string; value?: string; fileKey?: string; onChange: (value: string, key?: string) => void }) {
+function ProfilePhotoField({ name, value, fileKey, savedFileKey, onChange }: { name: string; value?: string; fileKey?: string; savedFileKey?: string; onChange: (value: string, key?: string) => void }) {
   const { showToast } = useApp();
   const [isRemoving, setIsRemoving] = useState(false);
   const uploadReady = Boolean(import.meta.env.VITE_UPLOADTHING_ENABLED ?? true);
@@ -2236,16 +2280,18 @@ function ProfilePhotoField({ name, value, fileKey, onChange }: { name: string; v
     const item = file as { url?: string; ufsUrl?: string; appUrl?: string; key?: string; fileKey?: string; customId?: string };
     return {
       url: item.ufsUrl ?? item.url ?? item.appUrl ?? "",
-      key: item.key ?? item.fileKey ?? item.customId ?? "",
+      key: item.key ?? item.fileKey ?? "",
     };
   };
 
   const removePhoto = async () => {
     setIsRemoving(true);
     try {
-      if (fileKey) {
+      if (fileKey && fileKey !== savedFileKey) {
         await backendApi.deleteUpload(fileKey);
         showToast("Profile photo deleted from UploadThing", "success");
+      } else if (fileKey) {
+        showToast("Photo removed from the form. Save to apply this change.", "info");
       }
       onChange("", "");
     } catch (err) {
@@ -2267,6 +2313,9 @@ function ProfilePhotoField({ name, value, fileKey, onChange }: { name: string; v
             onClientUploadComplete={(files) => {
               const uploaded = uploadedFileInfo(files?.[0]);
               if (uploaded.url) {
+                if (fileKey && fileKey !== savedFileKey && fileKey !== uploaded.key) {
+                  backendApi.deleteUpload(fileKey).catch(() => undefined);
+                }
                 onChange(uploaded.url, uploaded.key);
                 showToast("Profile photo uploaded", "success");
               }
