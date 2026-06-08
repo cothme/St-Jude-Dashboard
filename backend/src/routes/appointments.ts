@@ -40,8 +40,11 @@ async function enforceDoctorAppointmentAccess(req: AuthedRequest, res: Response,
 router.use(requireAuth);
 
 router.get("/", async (req: AuthedRequest, res) => {
+  const linkedDoctorId = req.user?.linkedEmployeeId ?? -1;
   const appointments = await prisma.appointment.findMany({
-    where: req.user?.role === Role.DOCTOR ? { doctorId: req.user.linkedEmployeeId ?? -1 } : undefined,
+    where: req.user?.role === Role.DOCTOR
+      ? { doctorId: linkedDoctorId, patient: { attendingDoctorId: linkedDoctorId } }
+      : undefined,
     include: { patient: true, doctor: true },
     orderBy: { startsAt: "asc" },
   });

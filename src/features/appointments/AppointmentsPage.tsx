@@ -20,7 +20,10 @@ export function AppointmentsPage() {
   const signedInDoctor = currentUser.role === "Doctor"
     ? doctors.find((doctor) => doctor.id === currentUser.linkedEmployeeId)
     : undefined;
-  const appointmentDoctors = signedInDoctor ? [signedInDoctor] : doctors;
+  const doctorIsUnlinked = currentUser.role === "Doctor" && !signedInDoctor;
+  const canManageAppointments = currentUser.role !== "Doctor" || Boolean(signedInDoctor);
+  const appointmentDoctors = currentUser.role === "Doctor" ? (signedInDoctor ? [signedInDoctor] : []) : doctors;
+  const doctorsMetricTarget = canAccess(currentUser.role, "employees") ? "/employees" : undefined;
   const today = new Date().toISOString().slice(0, 10);
   const [editing, setEditing] = useState<Appointment | Omit<Appointment, "id"> | null>(null);
   const [conducting, setConducting] = useState<Omit<CheckupRecord, "id" | "bmi"> | null>(null);
@@ -117,20 +120,21 @@ export function AppointmentsPage() {
   };
 
   return (
-    <Page title="Appointment Calendar" action={<button className="primary-btn" onClick={() => setEditing(newAppointment())}>Add Appointment</button>}>
+    <Page title="Appointment Calendar" action={canManageAppointments && <button className="primary-btn" onClick={() => setEditing(newAppointment())}>Add Appointment</button>}>
       <section className="metric-grid">
         <Metric to="/appointments" icon={<CalendarClock />} label="Today" value={data.appointments.filter((item) => item.startsAt.slice(0, 10) === today).length} note="Appointments scheduled today" />
-        <Metric to="/employees" icon={<Users />} label="Doctors" value={doctors.length} note="Available psychiatrists" />
+        <Metric to={doctorsMetricTarget} icon={<Users />} label="Doctors" value={doctors.length} note="Available psychiatrists" />
         <Metric to="/appointments" icon={<ClipboardList />} label="Scheduled" value={data.appointments.filter((item) => item.status === "Scheduled").length} note="Open calendar items" />
         <Metric to="/appointments" icon={<Activity />} label="Completed" value={data.appointments.filter((item) => item.status === "Completed").length} note="Finished appointments" />
       </section>
+      {doctorIsUnlinked && <section className="panel"><p className="section-note">Your user account is not linked to a doctor profile yet.</p></section>}
       <div className="dashboard-grid">
         <section className="panel">
           <div className="payroll-history-header">
             <div><h2>Calendar List</h2><p className="section-note">Filter by doctor and sort appointments.</p></div>
             <select value={doctorFilter} onChange={(event) => setDoctorFilter(event.target.value === "all" ? "all" : Number(event.target.value))}><option value="all">All doctors</option>{doctors.map((doctor) => <option key={doctor.id} value={doctor.id}>{doctorNameFromEmployee(doctor)}</option>)}</select>
           </div>
-          <div className="table-wrap"><table><thead><tr><SortableHeader label="Date" sortKey="date" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Patient" sortKey="patient" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Doctor" sortKey="doctor" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Reason" sortKey="reason" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Status" sortKey="status" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><th></th></tr></thead><tbody>{sortedAppointments.map((appointment) => <tr key={appointment.id} {...recordRowProps(() => setViewing(appointment), `View appointment details for ${patientName(data, appointment.patientId)}`)}><td data-label="Date"><strong>{formatDate(appointment.startsAt)}</strong><small>{appointment.durationMinutes} min</small></td><td data-label="Patient">{patientName(data, appointment.patientId)}</td><td data-label="Doctor">{doctorName(data, appointment.doctorId)}</td><td data-label="Reason">{appointment.reason}</td><td data-label="Status"><Badge>{appointment.status}</Badge></td><td className="actions" data-label="Actions">{canConductCheckups && appointment.status === "Scheduled" && <button className="primary-btn table-primary-action" onClick={(event) => { event.stopPropagation(); startAppointmentCheckup(appointment); }}>Conduct Checkup</button>}<button onClick={(event) => { event.stopPropagation(); setEditing(appointment); }}>Edit</button>{canDelete && <button className="danger" onClick={(event) => { event.stopPropagation(); remove(appointment); }}>Delete</button>}</td></tr>)}</tbody></table></div>
+          <div className="table-wrap"><table><thead><tr><SortableHeader label="Date" sortKey="date" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Patient" sortKey="patient" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Doctor" sortKey="doctor" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Reason" sortKey="reason" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Status" sortKey="status" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><th></th></tr></thead><tbody>{sortedAppointments.map((appointment) => <tr key={appointment.id} {...recordRowProps(() => setViewing(appointment), `View appointment details for ${patientName(data, appointment.patientId)}`)}><td data-label="Date"><strong>{formatDate(appointment.startsAt)}</strong><small>{appointment.durationMinutes} min</small></td><td data-label="Patient">{patientName(data, appointment.patientId)}</td><td data-label="Doctor">{doctorName(data, appointment.doctorId)}</td><td data-label="Reason">{appointment.reason}</td><td data-label="Status"><Badge>{appointment.status}</Badge></td><td className="actions" data-label="Actions">{canConductCheckups && canManageAppointments && appointment.status === "Scheduled" && <button className="primary-btn table-primary-action" onClick={(event) => { event.stopPropagation(); startAppointmentCheckup(appointment); }}>Conduct Checkup</button>}{canManageAppointments && <button onClick={(event) => { event.stopPropagation(); setEditing(appointment); }}>Edit</button>}{canDelete && <button className="danger" onClick={(event) => { event.stopPropagation(); remove(appointment); }}>Delete</button>}</td></tr>)}</tbody></table></div>
         </section>
         <section className="panel"><h2>Doctor Availability</h2><div className="table-wrap"><table className="doctor-availability-table"><thead><tr><th>Doctor</th><th>Today</th><th>Capacity</th></tr></thead><tbody>{doctors.map((doctor) => { const count = data.appointments.filter((appointment) => appointment.doctorId === doctor.id && appointment.startsAt.slice(0, 10) === today && appointment.status === "Scheduled").length; return <tr key={doctor.id}><td data-label="Doctor"><strong>{doctorNameFromEmployee(doctor)}</strong></td><td data-label="Today">{count} scheduled</td><td data-label="Capacity">{count >= 6 ? "Heavy schedule" : count >= 3 ? "Moderate schedule" : "Available capacity"}</td></tr>; })}</tbody></table></div></section>
       </div>
