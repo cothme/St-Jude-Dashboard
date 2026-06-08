@@ -636,7 +636,7 @@ const emptyDischarge = (currentUser: User): PatientDischargeInput => ({
 });
 
 function Patients() {
-  const { data, currentUser, addPatient, updatePatient, deletePatient, refreshData, showToast, logActivity } = useApp();
+  const { data, currentUser, addPatient, updatePatient, deletePatient, updateAppointment, refreshData, showToast, logActivity } = useApp();
   const doctors = data.employees.filter((employee) => employee.position === "Psychiatrist");
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<Patient | Omit<Patient, "id"> | null>(null);
@@ -744,15 +744,10 @@ function Patients() {
     setDischargeError("");
     setIsDischarging(true);
     try {
-      await backendApi.dischargePatient(discharging.id, dischargeForm);
-      const dischargedPatient: Patient = {
-        ...discharging,
-        ...dischargeForm,
-        status: "Discharged",
-        dischargeMedications: dischargeForm.dischargeMedications || undefined,
-        dischargeFollowUp: dischargeForm.dischargeFollowUp || undefined,
-      };
+      const result = await backendApi.dischargePatient(discharging.id, dischargeForm);
+      const dischargedPatient = result.data;
       updatePatient(dischargedPatient);
+      result.cancelledAppointments.forEach(updateAppointment);
       await refreshData();
       logActivity({
         action: "Discharged",

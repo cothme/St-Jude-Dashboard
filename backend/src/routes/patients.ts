@@ -99,24 +99,37 @@ router.post("/:id/discharge", requireRole(Role.SUPER_ADMIN, Role.STAFF), async (
   if (existing.status === PatientStatus.DISCHARGED) {
     return res.status(400).json({ error: "Patient is already discharged" });
   }
-  const patient = await prisma.patient.update({
-    where: { id: patientId },
-    data: {
-      status: PatientStatus.DISCHARGED,
-      dischargeDate: new Date(input.dischargeDate),
-      dischargeReason: input.dischargeReason,
-      dischargeCondition: input.dischargeCondition,
-      dischargeInstructions: input.dischargeInstructions,
-      dischargeMedications: input.dischargeMedications ?? null,
-      dischargeFollowUp: input.dischargeFollowUp ? new Date(input.dischargeFollowUp) : null,
-      dischargedBy: input.dischargedBy,
-    },
+  const [patient, cancelledAppointments] = await prisma.$transaction(async (tx) => {
+    const dischargedPatient = await tx.patient.update({
+      where: { id: patientId },
+      data: {
+        status: PatientStatus.DISCHARGED,
+        dischargeDate: new Date(input.dischargeDate),
+        dischargeReason: input.dischargeReason,
+        dischargeCondition: input.dischargeCondition,
+        dischargeInstructions: input.dischargeInstructions,
+        dischargeMedications: input.dischargeMedications ?? null,
+        dischargeFollowUp: input.dischargeFollowUp ? new Date(input.dischargeFollowUp) : null,
+        dischargedBy: input.dischargedBy,
+      },
+    });
+    const scheduledAppointments = await tx.appointment.findMany({
+      where: { patientId, status: "SCHEDULED" },
+      select: { id: true },
+    });
+    const scheduledAppointmentIds = scheduledAppointments.map((appointment) => appointment.id);
+    await tx.appointment.updateMany({
+      where: { id: { in: scheduledAppointmentIds } },
+      data: { status: "CANCELLED" },
+    });
+    const appointments = await tx.appointment.findMany({
+      where: { id: { in: scheduledAppointmentIds } },
+      orderBy: { startsAt: "asc" },
+    });
+
+    return [dischargedPatient, appointments];
   });
-  await prisma.appointment.updateMany({
-    where: { patientId, status: "SCHEDULED" },
-    data: { status: "CANCELLED" },
-  });
-  res.json({ data: patient });
+  res.json({ data: patient, cancelledAppointments });
 });
 
 router.delete("/:id", requireRole(Role.SUPER_ADMIN, Role.STAFF), async (req, res) => {

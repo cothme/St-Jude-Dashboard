@@ -93,7 +93,13 @@ export const backendApi = {
   },
   createPatient: (patient: Omit<Patient, "id">) => apiFetch<{ data: any }>("/patients", { method: "POST", body: JSON.stringify(patientToApi(patient)) }),
   updatePatient: (patient: Patient) => apiFetch<{ data: any }>(`/patients/${patient.id}`, { method: "PUT", body: JSON.stringify(patientToApi(patient)) }),
-  dischargePatient: (id: number, discharge: PatientDischargeInput) => apiFetch<{ data: any }>(`/patients/${id}/discharge`, { method: "POST", body: JSON.stringify(discharge) }),
+  async dischargePatient(id: number, discharge: PatientDischargeInput) {
+    const result = await apiFetch<{ data: any; cancelledAppointments?: any[] }>(`/patients/${id}/discharge`, { method: "POST", body: JSON.stringify(discharge) });
+    return {
+      data: patientFromApi(result.data),
+      cancelledAppointments: (result.cancelledAppointments ?? []).map(appointmentFromApi),
+    };
+  },
   deletePatient: (id: number) => apiFetch<void>(`/patients/${id}`, { method: "DELETE" }),
   createEmployee: (employee: Omit<Employee, "id">) => apiFetch<{ data: any }>("/employees", { method: "POST", body: JSON.stringify(employeeToApi(employee)) }),
   updateEmployee: (employee: Employee) => apiFetch<{ data: any }>(`/employees/${employee.id}`, { method: "PUT", body: JSON.stringify(employeeToApi(employee)) }),
