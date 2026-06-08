@@ -1,8 +1,8 @@
 import { Role } from "@prisma/client";
-import { Router } from "express";
+import { Response, Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db.js";
-import { requireAuth, requireRole } from "../middleware/auth.js";
+import { AuthedRequest, requireAuth, requireRole } from "../middleware/auth.js";
 
 const router = Router();
 const checkupSchema = z.object({
@@ -29,19 +29,39 @@ const bmi = (weight?: number | null, height?: number | null) => {
   return Number((weight / (meters * meters)).toFixed(2));
 };
 
+function currentDoctorEmployeeId(req: AuthedRequest, res: Response) {
+  if (req.user?.role !== Role.DOCTOR) return null;
+  if (!req.user.linkedEmployeeId) {
+    res.status(403).json({ error: "Doctor account is not linked to an employee profile" });
+    return false;
+  }
+  return req.user.linkedEmployeeId;
+}
+
 router.use(requireAuth);
 
-router.get("/", requireRole(Role.SUPER_ADMIN, Role.DOCTOR), async (_req, res) => {
+router.get("/", requireRole(Role.SUPER_ADMIN, Role.DOCTOR), async (req: AuthedRequest, res) => {
+  const doctorId = currentDoctorEmployeeId(req, res);
+  if (doctorId === false) return;
   const checkups = await prisma.checkupRecord.findMany({
+    where: doctorId ? { doctorId } : undefined,
     include: { patient: true, doctor: true },
     orderBy: { checkupDate: "desc" },
   });
   res.json({ data: checkups });
 });
 
-router.post("/", requireRole(Role.SUPER_ADMIN, Role.DOCTOR), async (req, res) => {
+router.post("/", requireRole(Role.SUPER_ADMIN, Role.DOCTOR), async (req: AuthedRequest, res) => {
   const input = checkupSchema.parse(req.body);
+  const doctorId = currentDoctorEmployeeId(req, res);
+  if (doctorId === false) return;
+  if (doctorId && input.doctorId !== doctorId) {
+    return res.status(403).json({ error: "Doctors can only create checkups under their own doctor profile" });
+  }
   const patient = await prisma.patient.findUniqueOrThrow({ where: { id: input.patientId } });
+  if (doctorId && patient.attendingDoctorId !== doctorId) {
+    return res.status(403).json({ error: "Doctors can only create checkups for assigned patients" });
+  }
   if (patient.status === "DISCHARGED") {
     return res.status(400).json({ error: "Discharged patients cannot receive routine checkups" });
   }
@@ -68,9 +88,24 @@ router.post("/", requireRole(Role.SUPER_ADMIN, Role.DOCTOR), async (req, res) =>
   res.status(201).json({ data: checkup });
 });
 
-router.put("/:id", requireRole(Role.SUPER_ADMIN, Role.DOCTOR), async (req, res) => {
+router.put("/:id", requireRole(Role.SUPER_ADMIN, Role.DOCTOR), async (req: AuthedRequest, res) => {
   const input = checkupSchema.parse(req.body);
+  const doctorId = currentDoctorEmployeeId(req, res);
+  if (doctorId === false) return;
+  const existingCheckup = await prisma.checkupRecord.findUniqueOrThrow({
+    where: { id: Number(req.params.id) },
+    select: { doctorId: true },
+  });
+  if (doctorId && existingCheckup.doctorId !== doctorId) {
+    return res.status(403).json({ error: "Doctors can only update their own checkups" });
+  }
+  if (doctorId && input.doctorId !== doctorId) {
+    return res.status(403).json({ error: "Doctors can only save checkups under their own doctor profile" });
+  }
   const patient = await prisma.patient.findUniqueOrThrow({ where: { id: input.patientId } });
+  if (doctorId && patient.attendingDoctorId !== doctorId) {
+    return res.status(403).json({ error: "Doctors can only update checkups for assigned patients" });
+  }
   if (patient.status === "DISCHARGED") {
     return res.status(400).json({ error: "Discharged patients cannot receive routine checkups" });
   }

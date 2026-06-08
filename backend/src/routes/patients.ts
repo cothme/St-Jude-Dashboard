@@ -2,7 +2,8 @@ import { CivilStatus, PatientStatus, Role, Sex } from "@prisma/client";
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db.js";
-import { requireAuth, requireRole } from "../middleware/auth.js";
+import { AuthedRequest, requireAuth, requireRole } from "../middleware/auth.js";
+import { deleteUploadThingFile } from "../uploadthing.js";
 
 const router = Router();
 const patientSchema = z.object({
@@ -42,18 +43,25 @@ const dischargeSchema = z.object({
 
 router.use(requireAuth);
 
-router.get("/", async (req, res) => {
+router.get("/", async (req: AuthedRequest, res) => {
   const q = typeof req.query.q === "string" ? req.query.q : "";
+  const doctorPatientFilter =
+    req.user?.role === Role.DOCTOR
+      ? { attendingDoctorId: req.user.linkedEmployeeId ?? -1 }
+      : {};
   const patients = await prisma.patient.findMany({
-    where: q
-      ? {
-          OR: [
-            { firstName: { contains: q, mode: "insensitive" } },
-            { lastName: { contains: q, mode: "insensitive" } },
-            { ward: { contains: q, mode: "insensitive" } },
-          ],
-        }
-      : undefined,
+    where: {
+      ...doctorPatientFilter,
+      ...(q
+        ? {
+            OR: [
+              { firstName: { contains: q, mode: "insensitive" } },
+              { lastName: { contains: q, mode: "insensitive" } },
+              { ward: { contains: q, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+    },
     include: { attendingDoctor: true },
     orderBy: { id: "asc" },
   });
@@ -99,28 +107,46 @@ router.post("/:id/discharge", requireRole(Role.SUPER_ADMIN, Role.STAFF), async (
   if (existing.status === PatientStatus.DISCHARGED) {
     return res.status(400).json({ error: "Patient is already discharged" });
   }
-  const patient = await prisma.patient.update({
-    where: { id: patientId },
-    data: {
-      status: PatientStatus.DISCHARGED,
-      dischargeDate: new Date(input.dischargeDate),
-      dischargeReason: input.dischargeReason,
-      dischargeCondition: input.dischargeCondition,
-      dischargeInstructions: input.dischargeInstructions,
-      dischargeMedications: input.dischargeMedications ?? null,
-      dischargeFollowUp: input.dischargeFollowUp ? new Date(input.dischargeFollowUp) : null,
-      dischargedBy: input.dischargedBy,
-    },
+  const [patient, cancelledAppointments] = await prisma.$transaction(async (tx) => {
+    const dischargedPatient = await tx.patient.update({
+      where: { id: patientId },
+      data: {
+        status: PatientStatus.DISCHARGED,
+        dischargeDate: new Date(input.dischargeDate),
+        dischargeReason: input.dischargeReason,
+        dischargeCondition: input.dischargeCondition,
+        dischargeInstructions: input.dischargeInstructions,
+        dischargeMedications: input.dischargeMedications ?? null,
+        dischargeFollowUp: input.dischargeFollowUp ? new Date(input.dischargeFollowUp) : null,
+        dischargedBy: input.dischargedBy,
+      },
+    });
+    const scheduledAppointments = await tx.appointment.findMany({
+      where: { patientId, status: "SCHEDULED" },
+      select: { id: true },
+    });
+    const scheduledAppointmentIds = scheduledAppointments.map((appointment) => appointment.id);
+    await tx.appointment.updateMany({
+      where: { id: { in: scheduledAppointmentIds } },
+      data: { status: "CANCELLED" },
+    });
+    const appointments = await tx.appointment.findMany({
+      where: { id: { in: scheduledAppointmentIds } },
+      orderBy: { startsAt: "asc" },
+    });
+
+    return [dischargedPatient, appointments];
   });
-  await prisma.appointment.updateMany({
-    where: { patientId, status: "SCHEDULED" },
-    data: { status: "CANCELLED" },
-  });
-  res.json({ data: patient });
+  res.json({ data: patient, cancelledAppointments });
 });
 
 router.delete("/:id", requireRole(Role.SUPER_ADMIN, Role.STAFF), async (req, res) => {
+  const patient = await prisma.patient.findUniqueOrThrow({
+    where: { id: Number(req.params.id) },
+    select: { profileImageKey: true },
+  });
   await prisma.patient.delete({ where: { id: Number(req.params.id) } });
+  await deleteUploadThingFile(patient.profileImageKey);
   res.status(204).send();
 });
 

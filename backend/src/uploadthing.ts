@@ -67,6 +67,18 @@ export const uploadRouter = {
 export type UploadRouter = typeof uploadRouter;
 
 const utapi = new UTApi();
+
+export async function deleteUploadThingFile(key?: string | null) {
+  const fileKey = key?.trim();
+  if (!fileKey) return;
+
+  try {
+    await utapi.deleteFiles(fileKey);
+  } catch (error) {
+    console.error(`Failed to delete UploadThing file ${fileKey}`, error);
+  }
+}
+
 export const uploadManagementRouter = Router();
 
 uploadManagementRouter.use(requireAuth);

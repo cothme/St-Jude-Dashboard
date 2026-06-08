@@ -93,9 +93,18 @@ export const backendApi = {
   },
   createPatient: (patient: Omit<Patient, "id">) => apiFetch<{ data: any }>("/patients", { method: "POST", body: JSON.stringify(patientToApi(patient)) }),
   updatePatient: (patient: Patient) => apiFetch<{ data: any }>(`/patients/${patient.id}`, { method: "PUT", body: JSON.stringify(patientToApi(patient)) }),
-  dischargePatient: (id: number, discharge: PatientDischargeInput) => apiFetch<{ data: any }>(`/patients/${id}/discharge`, { method: "POST", body: JSON.stringify(discharge) }),
+  async dischargePatient(id: number, discharge: PatientDischargeInput) {
+    const result = await apiFetch<{ data: any; cancelledAppointments?: any[] }>(`/patients/${id}/discharge`, { method: "POST", body: JSON.stringify(discharge) });
+    return {
+      data: patientFromApi(result.data),
+      cancelledAppointments: (result.cancelledAppointments ?? []).map(appointmentFromApi),
+    };
+  },
   deletePatient: (id: number) => apiFetch<void>(`/patients/${id}`, { method: "DELETE" }),
-  createEmployee: (employee: Omit<Employee, "id">) => apiFetch<{ data: any }>("/employees", { method: "POST", body: JSON.stringify(employeeToApi(employee)) }),
+  async createEmployee(employee: Omit<Employee, "id"> | (Omit<Employee, "id" | "employeeCode"> & { employeeCode?: string })) {
+    const result = await apiFetch<{ data: any }>("/employees", { method: "POST", body: JSON.stringify(employeeToApi(employee)) });
+    return employeeFromApi(result.data);
+  },
   updateEmployee: (employee: Employee) => apiFetch<{ data: any }>(`/employees/${employee.id}`, { method: "PUT", body: JSON.stringify(employeeToApi(employee)) }),
   deleteEmployee: (id: number) => apiFetch<void>(`/employees/${id}`, { method: "DELETE" }),
   createCheckup: (checkup: Omit<CheckupRecord, "id" | "bmi">) => apiFetch<{ data: any }>("/checkups", { method: "POST", body: JSON.stringify(checkupToApi(checkup)) }),
@@ -325,7 +334,7 @@ function patientToApi(patient: Patient | Omit<Patient, "id">) {
   };
 }
 
-function employeeToApi(employee: Employee | Omit<Employee, "id">) {
+function employeeToApi(employee: Employee | Omit<Employee, "id"> | (Omit<Employee, "id" | "employeeCode"> & { employeeCode?: string })) {
   return {
     ...employee,
     profileImageUrl: employee.profileImageUrl || null,
