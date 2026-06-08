@@ -38,11 +38,11 @@ export function Patients() {
   const [isSaving, setIsSaving] = useState(false);
   const [isDischarging, setIsDischarging] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
-  const [selectedId, setSelectedId] = useState<number | null>(data.patients[0]?.id ?? null);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
   const [viewingCheckup, setViewingCheckup] = useState<CheckupRecord | null>(null);
   const [sort, setSort] = useState<SortState<"name" | "age" | "status" | "ward" | "doctor">>({ key: "name", direction: "asc" });
   const [statusFilter, setStatusFilter] = useState<Patient["status"] | "Active" | "All">("Active");
-  const selected = data.patients.find((patient) => patient.id === selectedId) ?? data.patients[0];
+  const selected = data.patients.find((patient) => patient.id === selectedId);
   const filtered = data.patients.filter((patient) => {
     const matchesQuery = `${patient.firstName} ${patient.lastName} ${patient.ward} ${patient.status}`.toLowerCase().includes(query.toLowerCase());
     const matchesStatus = statusFilter === "All" || (statusFilter === "Active" ? patient.status !== "Discharged" : patient.status === statusFilter);
@@ -194,12 +194,20 @@ export function Patients() {
             </table>
           </div>
         </section>
-        {selected && <PatientDetail patient={selected} canManage={canManage} onDischarge={openDischarge} onViewCheckup={setViewingCheckup} />}
+        {selected ? <PatientDetail patient={selected} canManage={canManage} onDischarge={openDischarge} onViewCheckup={setViewingCheckup} /> : <NoPatientSelected />}
       </div>
       {editing && <Modal title={"id" in editing ? "Edit Patient Record" : "Add Patient Record"} onClose={closeEditor}>{error && <p className="form-error">{error}</p>}<PatientForm patient={editing} doctors={doctors} savedProfileImageKey={editing && "id" in editing ? data.patients.find((patient) => patient.id === editing.id)?.profileImageKey : undefined} isSaving={isSaving} onChange={setEditing} onSubmit={save} onCancel={closeEditor} /></Modal>}
       {discharging && <Modal title={`Discharge ${discharging.firstName} ${discharging.lastName}`} onClose={() => setDischarging(null)}>{dischargeError && <p className="form-error">{dischargeError}</p>}<DischargeForm discharge={dischargeForm} isSaving={isDischarging} onChange={setDischargeForm} onSubmit={dischargePatient} onCancel={() => setDischarging(null)} /></Modal>}
       {viewingCheckup && <CheckupDetailModal checkup={viewingCheckup} onClose={() => setViewingCheckup(null)} />}
     </Page>
+  );
+}
+
+function NoPatientSelected() {
+  return (
+    <aside className="panel detail-panel empty-detail-panel">
+      <h2>No patient selected</h2>
+    </aside>
   );
 }
 

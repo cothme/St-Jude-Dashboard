@@ -7,6 +7,8 @@ import { useApp } from "../app/AppProvider";
 import { Avatar } from "../shared/ui";
 import { ProfileSettingsModal } from "../features/users/ProfileSettingsModal";
 
+const APP_VERSION = "1.0.0";
+
 const navItems = [
   { to: "/", label: "Dashboard", permission: "dashboard", icon: Home },
   { to: "/patients", label: "Patients", permission: "patients", icon: Users },
@@ -51,9 +53,12 @@ export function Layout() {
       <div className="content-shell">
         <header className="topbar">
           <button className="icon-btn mobile-only" onClick={() => setOpen(true)}><Menu size={20} /></button>
-          <div>
-            <span className="eyebrow">Psychiatric and custodial home</span>
-            <h1>Administrator Dashboard</h1>
+          <div className="topbar-title">
+            <span className="eyebrow">Administrator Dashboard</span>
+            <div className="topbar-title-line">
+              <h1>St Jude's Psychiatric and Custodial Home</h1>
+              <span className="version-badge">v{APP_VERSION}</span>
+            </div>
           </div>
           <div className="topbar-actions">
             <TopbarClock />

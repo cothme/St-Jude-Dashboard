@@ -10,6 +10,7 @@ export interface AuthedRequest extends Request {
     name: string;
     email: string;
     role: Role;
+    linkedEmployeeId: number | null;
   };
 }
 
@@ -24,7 +25,7 @@ export async function requireAuth(req: AuthedRequest, res: Response, next: NextF
 
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { id: true, name: true, email: true, role: true },
+    select: { id: true, name: true, email: true, role: true, linkedEmployeeId: true },
   });
 
   if (!user) {

@@ -17,6 +17,10 @@ import { CheckupForm, emptyCheckup } from "../checkups/Checkups";
 export function AppointmentsPage() {
   const { data, currentUser, refreshData, showToast, logActivity, addAppointment, updateAppointment, deleteAppointment, addCheckup } = useApp();
   const doctors = data.employees.filter((employee) => employee.position === "Psychiatrist");
+  const signedInDoctor = currentUser.role === "Doctor"
+    ? doctors.find((doctor) => doctor.id === currentUser.linkedEmployeeId)
+    : undefined;
+  const appointmentDoctors = signedInDoctor ? [signedInDoctor] : doctors;
   const today = new Date().toISOString().slice(0, 10);
   const [editing, setEditing] = useState<Appointment | Omit<Appointment, "id"> | null>(null);
   const [conducting, setConducting] = useState<Omit<CheckupRecord, "id" | "bmi"> | null>(null);
@@ -34,6 +38,16 @@ export function AppointmentsPage() {
     doctor: (appointment) => doctorName(data, appointment.doctorId),
     status: (appointment) => appointment.status,
     reason: (appointment) => appointment.reason,
+  });
+  const newAppointment = (): Omit<Appointment, "id"> => ({
+    patientId: data.patients[0]?.id ?? 1,
+    doctorId: signedInDoctor?.id ?? doctors[0]?.id ?? 1,
+    startsAt: `${today}T09:00`,
+    durationMinutes: 30,
+    reason: "Follow-up checkup",
+    location: "Consultation Room 1",
+    status: "Scheduled",
+    notes: "",
   });
 
   const save = async (event: FormEvent<HTMLFormElement>) => {
@@ -103,7 +117,7 @@ export function AppointmentsPage() {
   };
 
   return (
-    <Page title="Appointment Calendar" action={<button className="primary-btn" onClick={() => setEditing({ patientId: data.patients[0]?.id ?? 1, doctorId: doctors[0]?.id ?? 1, startsAt: `${today}T09:00`, durationMinutes: 30, reason: "Follow-up checkup", location: "Consultation Room 1", status: "Scheduled", notes: "" })}>Add Appointment</button>}>
+    <Page title="Appointment Calendar" action={<button className="primary-btn" onClick={() => setEditing(newAppointment())}>Add Appointment</button>}>
       <section className="metric-grid">
         <Metric to="/appointments" icon={<CalendarClock />} label="Today" value={data.appointments.filter((item) => item.startsAt.slice(0, 10) === today).length} note="Appointments scheduled today" />
         <Metric to="/employees" icon={<Users />} label="Doctors" value={doctors.length} note="Available psychiatrists" />
@@ -118,9 +132,9 @@ export function AppointmentsPage() {
           </div>
           <div className="table-wrap"><table><thead><tr><SortableHeader label="Date" sortKey="date" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Patient" sortKey="patient" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Doctor" sortKey="doctor" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Reason" sortKey="reason" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><SortableHeader label="Status" sortKey="status" sort={sort} onSort={(key) => setSort((current) => nextSort(current, key))} /><th></th></tr></thead><tbody>{sortedAppointments.map((appointment) => <tr key={appointment.id} {...recordRowProps(() => setViewing(appointment), `View appointment details for ${patientName(data, appointment.patientId)}`)}><td data-label="Date"><strong>{formatDate(appointment.startsAt)}</strong><small>{appointment.durationMinutes} min</small></td><td data-label="Patient">{patientName(data, appointment.patientId)}</td><td data-label="Doctor">{doctorName(data, appointment.doctorId)}</td><td data-label="Reason">{appointment.reason}</td><td data-label="Status"><Badge>{appointment.status}</Badge></td><td className="actions" data-label="Actions">{canConductCheckups && appointment.status === "Scheduled" && <button className="primary-btn table-primary-action" onClick={(event) => { event.stopPropagation(); startAppointmentCheckup(appointment); }}>Conduct Checkup</button>}<button onClick={(event) => { event.stopPropagation(); setEditing(appointment); }}>Edit</button>{canDelete && <button className="danger" onClick={(event) => { event.stopPropagation(); remove(appointment); }}>Delete</button>}</td></tr>)}</tbody></table></div>
         </section>
-        <section className="panel"><h2>Doctor Availability</h2><div className="stack">{doctors.map((doctor) => { const count = data.appointments.filter((appointment) => appointment.doctorId === doctor.id && appointment.startsAt.slice(0, 10) === today && appointment.status === "Scheduled").length; return <article className="list-card" key={doctor.id}><strong>{doctorNameFromEmployee(doctor)}</strong><span>{count} scheduled today</span><small>{count >= 6 ? "Heavy schedule" : count >= 3 ? "Moderate schedule" : "Available capacity"}</small></article>; })}</div></section>
+        <section className="panel"><h2>Doctor Availability</h2><div className="table-wrap"><table className="doctor-availability-table"><thead><tr><th>Doctor</th><th>Today</th><th>Capacity</th></tr></thead><tbody>{doctors.map((doctor) => { const count = data.appointments.filter((appointment) => appointment.doctorId === doctor.id && appointment.startsAt.slice(0, 10) === today && appointment.status === "Scheduled").length; return <tr key={doctor.id}><td data-label="Doctor"><strong>{doctorNameFromEmployee(doctor)}</strong></td><td data-label="Today">{count} scheduled</td><td data-label="Capacity">{count >= 6 ? "Heavy schedule" : count >= 3 ? "Moderate schedule" : "Available capacity"}</td></tr>; })}</tbody></table></div></section>
       </div>
-      {editing && <Modal title={"id" in editing ? "Edit Appointment" : "Add Appointment"} onClose={() => setEditing(null)}><AppointmentForm appointment={editing} patients={data.patients} doctors={doctors} onChange={setEditing} onSubmit={save} onCancel={() => setEditing(null)} /></Modal>}
+      {editing && <Modal title={"id" in editing ? "Edit Appointment" : "Add Appointment"} onClose={() => setEditing(null)}><AppointmentForm appointment={editing} patients={data.patients} doctors={appointmentDoctors} lockDoctor={Boolean(signedInDoctor)} onChange={setEditing} onSubmit={save} onCancel={() => setEditing(null)} /></Modal>}
       {conducting && <Modal title="Conduct Scheduled Checkup" onClose={() => setConducting(null)}>{checkupError && <p className="form-error">{checkupError}</p>}<CheckupForm checkup={conducting} isSaving={isConducting} onChange={(checkup) => setConducting(checkup as Omit<CheckupRecord, "id" | "bmi">)} onSubmit={saveAppointmentCheckup} /></Modal>}
       {viewing && <RecordDetailModal title={`Appointment: ${patientName(data, viewing.patientId)}`} onClose={() => setViewing(null)} items={[
         { label: "Patient", value: patientName(data, viewing.patientId) },
@@ -136,12 +150,12 @@ export function AppointmentsPage() {
   );
 }
 
-function AppointmentForm({ appointment, patients, doctors, onChange, onSubmit, onCancel }: { appointment: Appointment | Omit<Appointment, "id">; patients: Patient[]; doctors: Employee[]; onChange: (appointment: Appointment | Omit<Appointment, "id">) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onCancel: () => void }) {
+function AppointmentForm({ appointment, patients, doctors, lockDoctor = false, onChange, onSubmit, onCancel }: { appointment: Appointment | Omit<Appointment, "id">; patients: Patient[]; doctors: Employee[]; lockDoctor?: boolean; onChange: (appointment: Appointment | Omit<Appointment, "id">) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onCancel: () => void }) {
   const set = (patch: Partial<Appointment>) => onChange({ ...appointment, ...patch });
   return (
     <form className="form-grid" onSubmit={onSubmit}>
       <FormSelect label="Patient" value={appointment.patientId} onChange={(value) => set({ patientId: Number(value) })}>{patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.firstName} {patient.lastName} - {patient.ward}</option>)}</FormSelect>
-      <FormSelect label="Doctor" value={appointment.doctorId} onChange={(value) => set({ doctorId: Number(value) })}>{doctors.map((doctor) => <option key={doctor.id} value={doctor.id}>{doctorNameFromEmployee(doctor)}</option>)}</FormSelect>
+      <FormSelect label="Doctor" value={appointment.doctorId} disabled={lockDoctor} onChange={(value) => set({ doctorId: Number(value) })}>{doctors.map((doctor) => <option key={doctor.id} value={doctor.id}>{doctorNameFromEmployee(doctor)}</option>)}</FormSelect>
       <FormInput label="Start time" required type="datetime-local" value={appointment.startsAt.slice(0, 16)} onChange={(value) => set({ startsAt: value })} />
       <FormInput label="Duration minutes" required type="number" min={15} max={240} value={appointment.durationMinutes} onChange={(value) => set({ durationMinutes: Number(value) })} />
       <FormInput label="Reason" required value={appointment.reason} onChange={(value) => set({ reason: value })} />

@@ -2,7 +2,7 @@ import { CivilStatus, PatientStatus, Role, Sex } from "@prisma/client";
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db.js";
-import { requireAuth, requireRole } from "../middleware/auth.js";
+import { AuthedRequest, requireAuth, requireRole } from "../middleware/auth.js";
 import { deleteUploadThingFile } from "../uploadthing.js";
 
 const router = Router();
@@ -43,18 +43,25 @@ const dischargeSchema = z.object({
 
 router.use(requireAuth);
 
-router.get("/", async (req, res) => {
+router.get("/", async (req: AuthedRequest, res) => {
   const q = typeof req.query.q === "string" ? req.query.q : "";
+  const doctorPatientFilter =
+    req.user?.role === Role.DOCTOR
+      ? { attendingDoctorId: req.user.linkedEmployeeId ?? -1 }
+      : {};
   const patients = await prisma.patient.findMany({
-    where: q
-      ? {
-          OR: [
-            { firstName: { contains: q, mode: "insensitive" } },
-            { lastName: { contains: q, mode: "insensitive" } },
-            { ward: { contains: q, mode: "insensitive" } },
-          ],
-        }
-      : undefined,
+    where: {
+      ...doctorPatientFilter,
+      ...(q
+        ? {
+            OR: [
+              { firstName: { contains: q, mode: "insensitive" } },
+              { lastName: { contains: q, mode: "insensitive" } },
+              { ward: { contains: q, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+    },
     include: { attendingDoctor: true },
     orderBy: { id: "asc" },
   });
