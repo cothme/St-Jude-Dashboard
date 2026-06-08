@@ -5,6 +5,7 @@ import { z } from "zod";
 import { prisma } from "../db.js";
 import { AuthedRequest, requireAuth, requireRole } from "../middleware/auth.js";
 import { auth } from "../auth.js";
+import { deleteUploadThingFile } from "../uploadthing.js";
 
 const router = Router();
 const canonicalSuperAdminEmail = process.env.SUPER_ADMIN_EMAIL ?? "admin@stjude.local";
@@ -144,12 +145,13 @@ router.delete("/:id", async (req, res) => {
   }
   const existing = await prisma.user.findUniqueOrThrow({
     where: { id: req.params.id },
-    select: { email: true, role: true },
+    select: { email: true, profileImageKey: true, role: true },
   });
   if (existing.role === Role.SUPER_ADMIN) {
     return res.status(400).json({ error: "Super admin account cannot be deleted" });
   }
   await prisma.user.delete({ where: { id: req.params.id } });
+  await deleteUploadThingFile(existing.profileImageKey);
   return res.status(204).send();
 });
 

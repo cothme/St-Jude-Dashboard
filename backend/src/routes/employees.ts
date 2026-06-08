@@ -3,6 +3,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { prisma } from "../db.js";
+import { deleteUploadThingFile } from "../uploadthing.js";
 
 const router = Router();
 const employeeSchema = z.object({
@@ -46,7 +47,12 @@ router.put("/:id", requireRole(Role.SUPER_ADMIN, Role.STAFF), async (req, res) =
 });
 
 router.delete("/:id", requireRole(Role.SUPER_ADMIN, Role.STAFF), async (req, res) => {
+  const employee = await prisma.employee.findUniqueOrThrow({
+    where: { id: Number(req.params.id) },
+    select: { profileImageKey: true },
+  });
   await prisma.employee.delete({ where: { id: Number(req.params.id) } });
+  await deleteUploadThingFile(employee.profileImageKey);
   res.status(204).send();
 });
 
