@@ -473,7 +473,7 @@ textarea:focus-visible {
   display: inline-flex;
   flex: 0 0 auto;
   font-size: 11px;
-  font-weight: 900;
+  font-weight: 700;
   line-height: 1;
   padding: 6px 8px;
   text-transform: uppercase;
@@ -571,9 +571,21 @@ textarea:focus-visible {
   gap: 8px;
 }
 
+.page-header .actions button,
+.page-header .actions .primary-btn,
+.page-header .actions .secondary-btn {
+  gap: 8px;
+  min-height: 44px;
+}
+
+.prescription-page-actions {
+  gap: 12px;
+}
+
 .actions button {
   background: var(--control-bg);
   color: var(--text);
+  gap: 7px;
   min-height: 34px;
   padding: 0 10px;
 }
@@ -603,6 +615,23 @@ textarea:focus-visible {
   color: var(--text);
   height: 38px;
   width: 38px;
+}
+
+.icon-action {
+  min-width: 36px;
+  padding-inline: 9px;
+}
+
+.sr-only {
+  clip: rect(0 0 0 0);
+  border: 0;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  padding: 0;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
 }
 
 .topbar-actions {
@@ -663,7 +692,7 @@ textarea:focus-visible {
 .topbar-clock span {
   color: var(--text-muted);
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 650;
   line-height: 1.15;
   text-transform: uppercase;
   white-space: nowrap;
@@ -1018,14 +1047,14 @@ input[type="number"]::-webkit-outer-spin-button {
 .table-wrap {
   border-radius: 8px;
   max-width: 100%;
-  overflow-x: auto;
+  overflow-x: hidden;
   overflow-y: hidden;
   width: 100%;
 }
 
 table {
   border-collapse: collapse;
-  min-width: 820px;
+  min-width: 0;
   table-layout: fixed;
   width: 100%;
 }
@@ -1057,7 +1086,7 @@ th.sortable button {
   color: inherit;
   display: inline-flex;
   font-size: inherit;
-  font-weight: 900;
+  font-weight: 700;
   gap: 6px;
   min-height: 44px;
   padding: 12px 10px;
@@ -1080,7 +1109,7 @@ th.sortable.active button {
   border: 1px solid var(--line);
   border-radius: 999px;
   font-size: 10px;
-  font-weight: 900;
+  font-weight: 700;
   padding: 2px 6px;
 }
 
@@ -1100,7 +1129,7 @@ td:last-child:has(> .actions) {
 
 td.actions {
   display: table-cell;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 td.actions button {
@@ -1120,13 +1149,19 @@ td small {
   display: block;
 }
 
+td strong,
+.identity-cell strong,
+.list-card strong,
+.record-card strong {
+  font-weight: 650;
+}
+
 tbody tr:hover {
   background: var(--hover-bg);
-  transform: translateX(2px);
 }
 
 tbody tr {
-  transition: background-color var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-standard);
+  transition: background-color var(--duration-fast) var(--ease-standard);
 }
 
 .clickable-row {
@@ -1207,7 +1242,7 @@ tbody tr {
 .payroll-preview span {
   color: var(--text-muted);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 650;
   text-transform: uppercase;
 }
 
@@ -1288,6 +1323,13 @@ tbody tr {
   display: grid;
   gap: 16px;
   grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.payroll-layout {
+  align-items: start;
+  display: grid;
+  gap: 28px;
+  grid-template-columns: minmax(320px, 0.85fr) minmax(0, 1.15fr);
 }
 
 .activity-overview-grid {
@@ -1463,7 +1505,7 @@ tbody tr {
 }
 
 .payroll-table {
-  min-width: 760px;
+  min-width: 0;
 }
 
 .payroll-table input[type="checkbox"] {
@@ -1477,11 +1519,128 @@ tbody tr {
 }
 
 .payroll-table .actions {
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
 }
 
 .payroll-table .actions button {
   white-space: nowrap;
+}
+
+.payroll-record-toolbar {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-top: 14px;
+}
+
+.payroll-select-page {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.payroll-sort-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.payroll-sort-buttons button {
+  background: var(--control-bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+  min-height: 34px;
+  padding: 0 10px;
+}
+
+.payroll-sort-buttons button.active {
+  background: var(--forest-700);
+  border-color: var(--forest-700);
+  color: #fff;
+}
+
+.payroll-record-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  margin-top: 14px;
+}
+
+.payroll-record-card {
+  background: var(--surface-muted);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 14px;
+  transition: border-color var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-standard), background-color var(--duration-fast) var(--ease-standard);
+}
+
+.payroll-record-card:hover,
+.payroll-record-card:focus-visible {
+  background: var(--surface);
+  border-color: color-mix(in srgb, var(--sage-400) 65%, var(--line));
+  box-shadow: 0 16px 42px var(--shadow);
+  transform: translateY(-2px);
+}
+
+.payroll-card-header {
+  align-items: start;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.payroll-card-header strong {
+  display: block;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.payroll-card-header small,
+.payroll-card-footer small {
+  color: var(--text-muted);
+}
+
+.payroll-card-check input {
+  min-height: auto;
+  width: 18px;
+}
+
+.payroll-card-amounts {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.payroll-card-amounts p {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  min-width: 0;
+  padding: 10px;
+}
+
+.payroll-card-amounts span {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+}
+
+.payroll-card-footer {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
 }
 
 .pagination-bar {
@@ -1655,6 +1814,25 @@ tbody tr {
   width: min(920px, 100%);
 }
 
+.idle-warning-backdrop {
+  z-index: 60;
+}
+
+.idle-warning-modal {
+  display: grid;
+  gap: 12px;
+  max-width: 420px;
+}
+
+.idle-warning-modal .modal-header {
+  margin-bottom: 0;
+}
+
+.idle-warning-modal .section-note {
+  line-height: 1.5;
+  margin: 0;
+}
+
 .modal-header {
   align-items: center;
   display: flex;
@@ -1672,7 +1850,7 @@ tbody tr {
   color: var(--text-muted);
   display: grid;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 650;
   gap: 6px;
   text-transform: uppercase;
 }
@@ -1688,7 +1866,7 @@ tbody tr {
   color: var(--text-muted);
   display: flex;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 700;
   justify-content: space-between;
   line-height: 1.25;
   min-height: 15px;
@@ -1756,6 +1934,76 @@ tbody tr {
   margin-top: 2px;
 }
 
+.prescription-card {
+  align-items: center;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.prescription-card-main {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 0;
+  text-align: left;
+}
+
+.prescription-card-main strong,
+.prescription-card-main small {
+  overflow-wrap: anywhere;
+}
+
+.prescription-card .secondary-btn {
+  gap: 8px;
+  min-height: 36px;
+}
+
+.prescription-form {
+  column-gap: 16px;
+  row-gap: 16px;
+  max-width: 1040px;
+}
+
+.app-modal:has(.prescription-form) {
+  max-width: 1080px;
+}
+
+.prescription-items-field {
+  gap: 12px;
+  margin: 4px 0;
+}
+
+.prescription-item-list {
+  display: grid;
+  gap: 14px;
+}
+
+.prescription-item-row {
+  align-items: end;
+  background: var(--surface-muted);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(170px, 1.35fr) minmax(130px, 0.85fr) minmax(120px, 0.75fr) minmax(120px, 0.75fr) minmax(100px, 0.65fr) 46px;
+  padding: 14px;
+}
+
+.prescription-item-row .form-field {
+  min-width: 0;
+}
+
+.prescription-item-row .form-field-wide {
+  grid-column: 1 / -1;
+}
+
+.prescription-remove-btn {
+  height: 46px;
+  width: 46px;
+}
+
 .currency-field input {
   padding-left: 32px;
 }
@@ -1763,13 +2011,20 @@ tbody tr {
 .currency-prefix {
   bottom: 13px;
   color: var(--text-muted);
-  font-weight: 900;
+  font-weight: 650;
   left: 12px;
   line-height: 1;
   pointer-events: none;
   position: absolute;
   text-transform: none;
   z-index: 1;
+}
+
+.form-field > span:first-child small {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 550;
+  text-transform: none;
 }
 
 .field-error,
@@ -1780,7 +2035,7 @@ tbody tr {
   border-radius: 8px;
   color: var(--danger-text);
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 650;
   line-height: 1.35;
   margin: 0;
   padding: 9px 10px;
@@ -2041,7 +2296,8 @@ textarea[aria-invalid="true"] {
 
   .dashboard-grid,
   .split-layout,
-  .forms-layout {
+  .forms-layout,
+  .payroll-layout {
     grid-template-columns: 1fr;
   }
 
@@ -2145,7 +2401,9 @@ textarea[aria-invalid="true"] {
   }
 
   .checkup-history-header,
-  .checkup-list-header {
+  .checkup-list-header,
+  .payroll-history-header,
+  .payroll-record-toolbar {
     align-items: stretch;
     flex-direction: column;
   }
@@ -2156,6 +2414,19 @@ textarea[aria-invalid="true"] {
 
   .doctor-patient-meta {
     grid-template-columns: 1fr;
+  }
+
+  .prescription-card {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+
+  .prescription-item-row {
+    grid-template-columns: 1fr;
+  }
+
+  .prescription-remove-btn {
+    justify-self: start;
   }
 
   .checkup-detail-modal .detail-list {
@@ -2313,6 +2584,24 @@ textarea[aria-invalid="true"] {
 
   .payroll-table input[type="checkbox"] {
     justify-self: start;
+  }
+
+  .payroll-record-grid,
+  .payroll-card-amounts {
+    grid-template-columns: 1fr;
+  }
+
+  .payroll-card-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .payroll-sort-buttons {
+    justify-content: stretch;
+  }
+
+  .payroll-sort-buttons button {
+    flex: 1 1 120px;
   }
 
   .metric-grid {

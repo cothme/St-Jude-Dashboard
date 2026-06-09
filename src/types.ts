@@ -75,6 +75,7 @@ export interface Employee {
   lastName: string;
   profileImageUrl?: string;
   profileImageKey?: string;
+  sex: "Male" | "Female";
   position: string;
   department: string;
   email: string;
@@ -156,6 +157,27 @@ export interface MedicationAdministration {
   notes?: string;
 }
 
+export interface PrescriptionItem {
+  medication: string;
+  dosage: string;
+  frequency: string;
+  duration?: string;
+  quantity?: string;
+  instructions?: string;
+}
+
+export interface Prescription {
+  id: number;
+  patientId: number;
+  prescriptionDate: string;
+  items: PrescriptionItem[];
+  notes?: string;
+  prescribedBy: string;
+  licenseNo?: string;
+  ptrNo?: string;
+  s2No?: string;
+}
+
 export interface Appointment {
   id: number;
   patientId: number;
@@ -178,5 +200,6 @@ export interface AppData {
   activityLogs: ActivityLog[];
   medicationSchedules: MedicationSchedule[];
   medicationAdministrations: MedicationAdministration[];
+  prescriptions: Prescription[];
   appointments: Appointment[];
 }

@@ -1,11 +1,11 @@
 import { FormEvent, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes, useEffect, useId, useMemo, useState } from "react";
-import { Activity, ArrowUpDown, Banknote, CalendarClock, ClipboardPlus, ClipboardList, FileText, Home, LogOut, Menu, Moon, Plus, Search, Shield, Syringe, Sun, Trash2, Users, UserRoundCog, X } from "lucide-react";
+import { Activity, ArrowUpDown, Banknote, CalendarClock, ClipboardPlus, ClipboardList, Download, Eye, FileText, Home, LogOut, Menu, Moon, Plus, Search, Shield, Syringe, Sun, Trash2, Users, UserRoundCog, X } from "lucide-react";
 import { ActivityLog, AppData, Appointment, CareFormSubmission, CheckupRecord, Employee, FormCategory, MedicationAdministration, MedicationSchedule, Patient, PatientDischargeInput, PayrollRecord, Role, User } from "../../types";
 import { ageFromBirthDate, calculateBmi, formatCurrency, formatDate, nextId } from "../../utils";
 import { Link } from "react-router-dom";
 import { useApp } from "../../app/AppProvider";
 import { backendApi, backendAuth } from "../../services/apiClient";
-import { Badge, CurrencyInput, FormInput, FormSelect, FormTextarea, Metric, Modal, Page, PaginationControls, ProfilePhotoField, SearchBox, Avatar, RecordDetailModal, recordRowProps } from "../../shared/ui";
+import { ActionIconButton, Badge, CurrencyInput, FormInput, FormSelect, FormTextarea, Metric, Modal, Page, PaginationControls, ProfilePhotoField, SearchBox, Avatar, RecordDetailModal, recordRowProps } from "../../shared/ui";
 import { nextSort, SortableHeader, sortItems, type SortState } from "../../shared/sorting";
 import { deleteReplacedProfilePhoto, discardDraftProfilePhoto } from "../../shared/profilePhotos";
 import { appointmentLogDetails, checkupLogDetails, employeeLogDetails, medicationAdministrationLogDetails, medicationScheduleLogDetails, patientDischargeLogDetails, patientLogDetails, payrollLogDetails, userLogDetails } from "../../shared/activityLogDetails";
@@ -251,33 +251,48 @@ export function Payroll() {
             <option value="all">All employees</option>
             {data.employees.map((item) => <option key={item.id} value={item.id}>{item.firstName} {item.lastName} - {item.position}</option>)}
           </select>
-          <div className="table-wrap payroll-table-wrap">
-            <table className="payroll-table">
-              <thead>
-                <tr>
-                  <th><input type="checkbox" aria-label="Select all payroll records on this page" checked={payrollPageRecords.length > 0 && payrollPageRecords.every((record) => selectedPayrollIds.includes(record.id))} onChange={(event) => event.target.checked ? setSelectedPayrollIds((current) => Array.from(new Set([...current, ...payrollPageRecords.map((record) => record.id)]))) : setSelectedPayrollIds((current) => current.filter((id) => !payrollPageRecords.some((record) => record.id === id)))} /></th>
-                  <SortableHeader label="Employee" sortKey="employee" sort={payrollSort} onSort={(key) => { setPayrollSort((current) => nextSort(current, key)); setPayrollPage(1); }} />
-                  <SortableHeader label="Pay Period" sortKey="period" sort={payrollSort} onSort={(key) => { setPayrollSort((current) => nextSort(current, key)); setPayrollPage(1); }} />
-                  <SortableHeader label="Gross" sortKey="gross" sort={payrollSort} onSort={(key) => { setPayrollSort((current) => nextSort(current, key)); setPayrollPage(1); }} />
-                  <SortableHeader label="Deductions" sortKey="deductions" sort={payrollSort} onSort={(key) => { setPayrollSort((current) => nextSort(current, key)); setPayrollPage(1); }} />
-                  <SortableHeader label="Net Pay" sortKey="net" sort={payrollSort} onSort={(key) => { setPayrollSort((current) => nextSort(current, key)); setPayrollPage(1); }} />
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {payrollPageRecords.map((record) => (
-                  <tr key={record.id} {...recordRowProps(() => setViewingPayroll(record), `View payroll details for ${employeeName(data, record.employeeId)}`)}>
-                    <td data-label="Select"><input type="checkbox" aria-label={`Select payroll for ${employeeName(data, record.employeeId)}`} checked={selectedPayrollIds.includes(record.id)} onClick={(event) => event.stopPropagation()} onChange={() => togglePayrollRecord(record.id)} /></td>
-                    <td data-label="Employee"><strong>{employeeName(data, record.employeeId)}</strong></td>
-                    <td data-label="Pay Period">{formatDate(record.payPeriodStart)} - {formatDate(record.payPeriodEnd)}</td>
-                    <td data-label="Gross">{formatCurrency(record.grossPay)}</td>
-                    <td data-label="Deductions">{formatCurrency(record.totalDeductions)}</td>
-                    <td data-label="Net Pay"><strong>{formatCurrency(record.netPay)}</strong></td>
-                    <td data-label="Actions"><div className="actions"><button className="secondary-btn" onClick={(event) => { event.stopPropagation(); exportPayslip(record); }}>Export PDF</button>{currentUser.role === "Super admin" && <button className="danger" disabled={payrollAction === "delete"} onClick={(event) => { event.stopPropagation(); deletePayroll(record); }}>{payrollAction === "delete" ? "Deleting..." : "Delete"}</button>}</div></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="payroll-record-toolbar">
+            <label className="toggle-row payroll-select-page"><input type="checkbox" aria-label="Select all payroll records on this page" checked={payrollPageRecords.length > 0 && payrollPageRecords.every((record) => selectedPayrollIds.includes(record.id))} onChange={(event) => event.target.checked ? setSelectedPayrollIds((current) => Array.from(new Set([...current, ...payrollPageRecords.map((record) => record.id)]))) : setSelectedPayrollIds((current) => current.filter((id) => !payrollPageRecords.some((record) => record.id === id)))} /><span>Select page</span></label>
+            <div className="payroll-sort-buttons" aria-label="Sort payroll records">
+              {([
+                ["employee", "Employee"],
+                ["period", "Period"],
+                ["gross", "Gross"],
+                ["deductions", "Deductions"],
+                ["net", "Net"],
+              ] as const).map(([key, label]) => (
+                <button key={key} className={payrollSort.key === key ? "active" : ""} onClick={() => { setPayrollSort((current) => nextSort(current, key)); setPayrollPage(1); }}>{label}</button>
+              ))}
+            </div>
+          </div>
+          <div className="payroll-record-grid">
+            {payrollPageRecords.map((record) => (
+              <article key={record.id} {...recordRowProps(() => setViewingPayroll(record), `View payroll details for ${employeeName(data, record.employeeId)}`)} className="payroll-record-card clickable-card">
+                <div className="payroll-card-header">
+                  <label className="payroll-card-check" onClick={(event) => event.stopPropagation()}>
+                    <input type="checkbox" aria-label={`Select payroll for ${employeeName(data, record.employeeId)}`} checked={selectedPayrollIds.includes(record.id)} onChange={() => togglePayrollRecord(record.id)} />
+                  </label>
+                  <div>
+                    <strong>{employeeName(data, record.employeeId)}</strong>
+                    <small>{formatDate(record.payPeriodStart)} - {formatDate(record.payPeriodEnd)}</small>
+                  </div>
+                  <Badge>{record.daysWorked} days</Badge>
+                </div>
+                <div className="payroll-card-amounts">
+                  <p><span>Gross</span>{formatCurrency(record.grossPay)}</p>
+                  <p><span>Deductions</span>{formatCurrency(record.totalDeductions)}</p>
+                  <p><span>Net pay</span>{formatCurrency(record.netPay)}</p>
+                </div>
+                <div className="payroll-card-footer">
+                  <small>Overtime: {record.overtimeHours} hrs</small>
+                  <div className="actions">
+                    <ActionIconButton label={`View payroll details for ${employeeName(data, record.employeeId)}`} icon={<Eye size={16} />} onClick={(event) => { event.stopPropagation(); setViewingPayroll(record); }}>View</ActionIconButton>
+                    <ActionIconButton label={`Export payslip PDF for ${employeeName(data, record.employeeId)}`} icon={<Download size={16} />} onClick={(event) => { event.stopPropagation(); exportPayslip(record); }}>Export</ActionIconButton>
+                    {currentUser.role === "Super admin" && <ActionIconButton variant="danger" label={`Delete payroll for ${employeeName(data, record.employeeId)}`} icon={<Trash2 size={16} />} disabled={payrollAction === "delete"} onClick={(event) => { event.stopPropagation(); deletePayroll(record); }}>Delete</ActionIconButton>}
+                  </div>
+                </div>
+              </article>
+            ))}
           </div>
           <PaginationControls page={payrollPage} totalPages={payrollTotalPages} totalItems={filteredPayrollRecords.length} label="records" pageSize={payrollItemsPerPage} pageSizeOptions={[8, 15, 25, 50]} onPageChange={setPayrollPage} onPageSizeChange={(size) => { setPayrollItemsPerPage(size); setPayrollPage(1); }} />
           <div className="pagination-bar legacy-pagination-hidden">

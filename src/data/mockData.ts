@@ -7,10 +7,10 @@ export const initialData: AppData = {
     { id: 3, name: "Dr. Miguel Cruz", email: "doctor@stjude.local", role: "Doctor", status: "Active", linkedEmployeeId: 1 },
   ],
   employees: [
-    { id: 1, employeeCode: "SJ-001", firstName: "Miguel", lastName: "Cruz", position: "Psychiatrist", department: "Clinical", email: "mcruz@stjude.local", phone: "0917 222 0101", hireDate: "2022-01-10", baseSalary: 68000, workDaysPerWeek: 5, status: "Active" },
-    { id: 2, employeeCode: "SJ-002", firstName: "Lena", lastName: "Dizon", position: "Nurse", department: "Custodial Care", email: "ldizon@stjude.local", phone: "0917 222 0102", hireDate: "2021-09-18", baseSalary: 34000, workDaysPerWeek: 6, status: "Active" },
-    { id: 3, employeeCode: "SJ-003", firstName: "Ana", lastName: "Reyes", position: "Care Staff", department: "Administration", email: "areyes@stjude.local", phone: "0917 222 0103", hireDate: "2023-04-03", baseSalary: 28000, workDaysPerWeek: 6, status: "Active" },
-    { id: 4, employeeCode: "SJ-004", firstName: "Paolo", lastName: "Garcia", position: "Cook", department: "Operations", email: "pgarcia@stjude.local", phone: "0917 222 0104", hireDate: "2020-11-20", baseSalary: 24000, workDaysPerWeek: 6, status: "Active" },
+    { id: 1, employeeCode: "SJ-001", firstName: "Miguel", lastName: "Cruz", sex: "Male", position: "Psychiatrist", department: "Clinical", email: "mcruz@stjude.local", phone: "0917 222 0101", hireDate: "2022-01-10", baseSalary: 68000, workDaysPerWeek: 5, status: "Active" },
+    { id: 2, employeeCode: "SJ-002", firstName: "Lena", lastName: "Dizon", sex: "Female", position: "Nurse", department: "Custodial Care", email: "ldizon@stjude.local", phone: "0917 222 0102", hireDate: "2021-09-18", baseSalary: 34000, workDaysPerWeek: 6, status: "Active" },
+    { id: 3, employeeCode: "SJ-003", firstName: "Ana", lastName: "Reyes", sex: "Female", position: "Care Staff", department: "Administration", email: "areyes@stjude.local", phone: "0917 222 0103", hireDate: "2023-04-03", baseSalary: 28000, workDaysPerWeek: 6, status: "Active" },
+    { id: 4, employeeCode: "SJ-004", firstName: "Paolo", lastName: "Garcia", sex: "Male", position: "Cook", department: "Operations", email: "pgarcia@stjude.local", phone: "0917 222 0104", hireDate: "2020-11-20", baseSalary: 24000, workDaysPerWeek: 6, status: "Active" },
   ],
   patients: [
     { id: 1, firstName: "Ramon", lastName: "Villanueva", dateOfBirth: "1978-08-12", sex: "Male", civilStatus: "Single", nationality: "Filipino", address: "Quezon City", contactNumber: "0918 100 8801", emergencyContactName: "Elena Villanueva", emergencyContactNumber: "0918 100 8802", attendingDoctorId: 1, status: "Stable", ward: "A-102", admissionDate: "2025-12-04" },
@@ -82,6 +82,7 @@ export const initialData: AppData = {
   medicationAdministrations: [
     { id: 1, scheduleId: 1, patientId: 1, medication: "Sertraline", dosage: "50 mg", administeredAt: "2026-05-25T08:04:00", administeredBy: "Lena Dizon", status: "Given", notes: "Taken with water." },
   ],
+  prescriptions: [],
   appointments: [
     { id: 1, patientId: 1, doctorId: 1, startsAt: "2026-05-26T09:00:00", durationMinutes: 30, reason: "Follow-up checkup", location: "Consultation Room 1", status: "Scheduled", notes: "Review sleep pattern." },
     { id: 2, patientId: 2, doctorId: 1, startsAt: "2026-05-26T10:00:00", durationMinutes: 45, reason: "Medication review", location: "Consultation Room 1", status: "Scheduled" },

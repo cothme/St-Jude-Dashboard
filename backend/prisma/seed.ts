@@ -21,11 +21,12 @@ async function createDemoUser(name: string, email: string, role: Role, linkedEmp
 async function main() {
   const doctor = await prisma.employee.upsert({
     where: { employeeCode: "SJ-001" },
-    update: {},
+    update: { sex: "MALE" },
     create: {
       employeeCode: "SJ-001",
       firstName: "Miguel",
       lastName: "Cruz",
+      sex: "MALE",
       position: "Psychiatrist",
       department: "Clinical",
       email: "mcruz@stjude.local",
@@ -38,11 +39,12 @@ async function main() {
 
   await prisma.employee.upsert({
     where: { employeeCode: "SJ-002" },
-    update: {},
+    update: { sex: "FEMALE" },
     create: {
       employeeCode: "SJ-002",
       firstName: "Lena",
       lastName: "Dizon",
+      sex: "FEMALE",
       position: "Nurse",
       department: "Custodial Care",
       email: "ldizon@stjude.local",
@@ -55,11 +57,12 @@ async function main() {
 
   const staff = await prisma.employee.upsert({
     where: { employeeCode: "SJ-003" },
-    update: {},
+    update: { sex: "FEMALE" },
     create: {
       employeeCode: "SJ-003",
       firstName: "Ana",
       lastName: "Reyes",
+      sex: "FEMALE",
       position: "Care Staff",
       department: "Administration",
       email: "areyes@stjude.local",

@@ -1,11 +1,11 @@
 import { FormEvent, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes, useEffect, useId, useMemo, useState } from "react";
-import { Activity, ArrowUpDown, Banknote, CalendarClock, ClipboardPlus, ClipboardList, FileText, Home, LogOut, Menu, Moon, Plus, Search, Shield, Syringe, Sun, Trash2, Users, UserRoundCog, X } from "lucide-react";
+import { Activity, ArrowUpDown, Banknote, CalendarClock, ClipboardPlus, ClipboardList, FileText, Home, LogOut, Menu, Moon, Pencil, Plus, Search, Shield, Syringe, Sun, Trash2, Users, UserRoundCog, X } from "lucide-react";
 import { ActivityLog, AppData, Appointment, CareFormSubmission, CheckupRecord, Employee, FormCategory, MedicationAdministration, MedicationSchedule, Patient, PatientDischargeInput, PayrollRecord, Role, User } from "../../types";
 import { ageFromBirthDate, calculateBmi, formatCurrency, formatDate, nextId } from "../../utils";
 import { Link } from "react-router-dom";
 import { useApp } from "../../app/AppProvider";
 import { backendApi, backendAuth } from "../../services/apiClient";
-import { Badge, CurrencyInput, FormInput, FormSelect, FormTextarea, Metric, Modal, Page, PaginationControls, ProfilePhotoField, SearchBox, Avatar, recordRowProps } from "../../shared/ui";
+import { ActionIconButton, Badge, CurrencyInput, FormInput, FormSelect, FormTextarea, Metric, Modal, Page, PaginationControls, ProfilePhotoField, SearchBox, Avatar, recordRowProps } from "../../shared/ui";
 import { nextSort, SortableHeader, sortItems, type SortState } from "../../shared/sorting";
 import { deleteReplacedProfilePhoto, discardDraftProfilePhoto } from "../../shared/profilePhotos";
 import { appointmentLogDetails, checkupLogDetails, employeeLogDetails, medicationAdministrationLogDetails, medicationScheduleLogDetails, patientDischargeLogDetails, patientLogDetails, payrollLogDetails, userLogDetails } from "../../shared/activityLogDetails";
@@ -185,8 +185,8 @@ export function Patients() {
                     <td data-label="Ward">{patient.ward}</td>
                     <td data-label="Doctor">{doctorName(data, patient.attendingDoctorId)}</td>
                     <td className="actions" data-label="Actions">
-                      {canManage && <button onClick={(event) => { event.stopPropagation(); setEditing(patient); }}>Edit</button>}
-                      {canManage && <button className="danger" disabled={deletingId === patient.id} onClick={(event) => { event.stopPropagation(); removePatient(patient); }}>{deletingId === patient.id ? "Deleting..." : "Delete"}</button>}
+                      {canManage && <ActionIconButton label={`Edit ${patient.firstName} ${patient.lastName}`} icon={<Pencil size={16} />} onClick={(event) => { event.stopPropagation(); setEditing(patient); }}>Edit</ActionIconButton>}
+                      {canManage && <ActionIconButton variant="danger" label={`Delete ${patient.firstName} ${patient.lastName}`} icon={<Trash2 size={16} />} disabled={deletingId === patient.id} onClick={(event) => { event.stopPropagation(); removePatient(patient); }}>Delete</ActionIconButton>}
                     </td>
                   </tr>
                 ))}
@@ -308,7 +308,7 @@ function PatientForm({ patient, doctors, savedProfileImageKey, isSaving, onChang
       <FormInput label="Last name" required value={patient.lastName} onChange={(value) => set({ lastName: value })} />
       <FormInput label="Date of birth" required type="date" value={patient.dateOfBirth} onChange={(value) => set({ dateOfBirth: value })} />
       <FormInput label="Admission date" required type="date" value={patient.admissionDate} onChange={(value) => set({ admissionDate: value })} />
-      <FormSelect label="Sex" value={patient.sex} onChange={(value) => set({ sex: value as Patient["sex"] })}><option>Male</option><option>Female</option></FormSelect>
+      <FormSelect label="Gender" value={patient.sex} onChange={(value) => set({ sex: value as Patient["sex"] })}><option>Male</option><option>Female</option></FormSelect>
       <FormSelect label="Civil status" value={patient.civilStatus} onChange={(value) => set({ civilStatus: value as Patient["civilStatus"] })}><option>Single</option><option>Married</option><option>Widowed</option><option>Divorced</option></FormSelect>
       <FormInput label="Nationality" required value={patient.nationality} onChange={(value) => set({ nationality: value })} />
       <FormInput label="Ward / room" required value={patient.ward} onChange={(value) => set({ ward: value })} />

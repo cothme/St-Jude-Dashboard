@@ -3,6 +3,7 @@ import { Response, Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db.js";
 import { AuthedRequest, requireAuth, requireRole } from "../middleware/auth.js";
+import { renderPrescription } from "../utils/prescription.js";
 
 const router = Router();
 const scheduleSchema = z.object({
@@ -27,6 +28,24 @@ const administrationSchema = z.object({
   administeredBy: z.string().min(1),
   status: z.nativeEnum(MedicationAdministrationStatus).default(MedicationAdministrationStatus.GIVEN),
   notes: z.string().optional().nullable(),
+});
+const prescriptionItemSchema = z.object({
+  medication: z.string().min(1),
+  dosage: z.string().min(1),
+  frequency: z.string().min(1),
+  duration: z.string().optional().nullable(),
+  quantity: z.string().optional().nullable(),
+  instructions: z.string().optional().nullable(),
+});
+const prescriptionSchema = z.object({
+  patientId: z.number(),
+  prescriptionDate: z.string(),
+  items: z.array(prescriptionItemSchema).min(1),
+  notes: z.string().optional().nullable(),
+  prescribedBy: z.string().min(1),
+  licenseNo: z.string().optional().nullable(),
+  ptrNo: z.string().optional().nullable(),
+  s2No: z.string().optional().nullable(),
 });
 
 function doctorPatientWhere(req: AuthedRequest) {
@@ -134,6 +153,41 @@ router.post("/administrations", requireRole(Role.SUPER_ADMIN, Role.DOCTOR, Role.
     },
   });
   res.status(201).json({ data: administration });
+});
+
+router.get("/prescriptions", async (req: AuthedRequest, res) => {
+  const prescriptions = await prisma.prescription.findMany({
+    where: doctorPatientWhere(req),
+    include: { patient: true },
+    orderBy: { prescriptionDate: "desc" },
+  });
+  res.json({ data: prescriptions });
+});
+
+router.post("/prescriptions", requireRole(Role.SUPER_ADMIN, Role.DOCTOR, Role.STAFF), async (req: AuthedRequest, res) => {
+  const input = prescriptionSchema.parse(req.body);
+  if (!(await enforceDoctorMedicationAccess(req, res, input.patientId))) return;
+  const prescription = await prisma.prescription.create({
+    data: {
+      ...input,
+      prescriptionDate: new Date(input.prescriptionDate),
+      items: input.items,
+    },
+  });
+  res.status(201).json({ data: prescription });
+});
+
+router.get("/prescriptions/:id/pdf", async (req: AuthedRequest, res) => {
+  const prescription = await prisma.prescription.findUniqueOrThrow({
+    where: { id: Number(req.params.id) },
+    include: { patient: true },
+  });
+  if (!(await enforceDoctorMedicationAccess(req, res, prescription.patientId))) return;
+  const pdf = await renderPrescription(prescription);
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename="prescription-${prescription.patientId}-${prescription.id}.pdf"`);
+  res.setHeader("Content-Length", pdf.length);
+  res.send(pdf);
 });
 
 export default router;

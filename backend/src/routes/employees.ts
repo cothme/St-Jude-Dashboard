@@ -1,4 +1,4 @@
-import { Prisma, RecordStatus, Role } from "@prisma/client";
+import { Prisma, RecordStatus, Role, Sex } from "@prisma/client";
 import { Router } from "express";
 import { z } from "zod";
 import { requireAuth, requireRole } from "../middleware/auth.js";
@@ -11,6 +11,7 @@ const employeeFieldsSchema = z.object({
   lastName: z.string().min(1),
   profileImageUrl: z.string().optional().nullable(),
   profileImageKey: z.string().optional().nullable(),
+  sex: z.nativeEnum(Sex).default(Sex.MALE),
   position: z.string().min(1),
   department: z.string().min(1),
   email: z.string().email().optional().nullable(),

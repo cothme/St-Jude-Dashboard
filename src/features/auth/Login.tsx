@@ -3,7 +3,17 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { Shield } from "lucide-react";
 import stJudeLogo from "../../assets/stjude-logo.png";
 import { useApp } from "../../app/AppProvider";
+import { ApiError } from "../../services/apiClient";
 import { FormInput } from "../../shared/ui";
+
+function signInMessage(error: unknown) {
+  if (error instanceof ApiError) {
+    if (error.code === "network") return "Cannot reach the server. Check your connection and try again.";
+    if (error.status === 401 || error.status === 403 || error.status === 400) return "The email or password you entered is incorrect.";
+    if (error.code === "server") return "The server could not complete sign-in right now. Please try again shortly.";
+  }
+  return "We could not sign you in. Please check your details and try again.";
+}
 
 export function Login() {
   const { signIn, isAuthenticated, showToast } = useApp();
@@ -27,7 +37,7 @@ export function Login() {
       await signIn(email, password);
       navigate((location.state as { from?: string } | null)?.from ?? "/");
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Login failed";
+      const message = signInMessage(err);
       setError(message);
       showToast(message, "error");
     } finally {
@@ -48,8 +58,8 @@ export function Login() {
         <h1>St. Jude Administrator Dashboard</h1>
         <p>Secure access for patient care, payroll, staffing, and administrative records.</p>
         <form className="login-form" onSubmit={submit}>
-          <FormInput label="Email" type="email" value={email} disabled={isSubmitting} onChange={setEmail} autoComplete="email" />
-          <FormInput label="Password" type="password" value={password} disabled={isSubmitting} onChange={setPassword} autoComplete="current-password" />
+          <FormInput label="Email" required type="email" value={email} disabled={isSubmitting} onChange={setEmail} autoComplete="email" />
+          <FormInput label="Password" required type="password" value={password} disabled={isSubmitting} onChange={setPassword} autoComplete="current-password" />
           {error && <p className="form-error">{error}</p>}
           <button className="primary-btn" disabled={isSubmitting}>{isSubmitting ? "Signing in..." : "Sign In"}</button>
         </form>

@@ -1,0 +1,2 @@
+ALTER TABLE "Employee" ADD COLUMN "sex" "Sex" NOT NULL DEFAULT 'MALE';
+

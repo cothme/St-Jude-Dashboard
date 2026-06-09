@@ -16,5 +16,14 @@ export function doctorName(data: AppData, id: number) {
 }
 
 export function doctorNameFromEmployee(employee: Employee) {
-  return employee.position === "Psychiatrist" ? `Dr. ${employee.firstName} ${employee.lastName}` : `${employee.firstName} ${employee.lastName}`;
+  return employee.position === "Psychiatrist" ? `${doctorTitleFromEmployee(employee)} ${employee.firstName} ${employee.lastName}` : `${employee.firstName} ${employee.lastName}`;
+}
+
+export function doctorTitle(data: AppData, id: number) {
+  const employee = data.employees.find((item) => item.id === id);
+  return employee ? doctorTitleFromEmployee(employee) : "Dr.";
+}
+
+export function doctorTitleFromEmployee(employee: Employee) {
+  return employee.sex === "Female" ? "Dra." : "Dr.";
 }
