@@ -13,6 +13,10 @@ export const auth = betterAuth({
   advanced: {
     useSecureCookies: config.isProduction,
   },
+  session: {
+    expiresIn: config.sessionMaxAgeSeconds,
+    updateAge: config.sessionRefreshAgeSeconds,
+  },
   emailAndPassword: {
     enabled: true,
   },

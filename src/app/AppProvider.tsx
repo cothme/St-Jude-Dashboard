@@ -1,6 +1,6 @@
-import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { backendApi, backendAuth } from "../services/apiClient";
-import { ActivityLog, AppData, Appointment, CareFormSubmission, CheckupRecord, Employee, MedicationAdministration, MedicationSchedule, Patient, PayrollRecord, Role, User } from "../types";
+import { ActivityLog, AppData, Appointment, CareFormSubmission, CheckupRecord, Employee, MedicationAdministration, MedicationSchedule, Patient, PayrollRecord, Prescription, Role, User } from "../types";
 import { calculateBmi, nextId } from "../utils";
 
 type UserEditor = User | (Omit<User, "id"> & { password?: string });
@@ -38,8 +38,13 @@ const emptyAppData: AppData = {
   activityLogs: [],
   medicationSchedules: [],
   medicationAdministrations: [],
+  prescriptions: [],
   appointments: [],
 };
+const idleTimeoutMs = Math.max(1, Number(import.meta.env.VITE_IDLE_TIMEOUT_MINUTES ?? 15)) * 60 * 1000;
+const idleWarningMs = Math.min(idleTimeoutMs, Math.max(10, Number(import.meta.env.VITE_IDLE_WARNING_SECONDS ?? 60)) * 1000);
+const sessionRefreshMs = Math.max(1, Number(import.meta.env.VITE_SESSION_REFRESH_MINUTES ?? 5)) * 60 * 1000;
+const lastActivityStorageKey = "stjude-last-activity";
 
 export interface AppContextValue {
   data: AppData;
@@ -50,7 +55,7 @@ export interface AppContextValue {
   theme: "light" | "dark";
   refreshData: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
-  signOut: () => Promise<void>;
+  signOut: (message?: string) => Promise<void>;
   showToast: (message: string, type?: "success" | "error" | "info") => void;
   logActivity: (activity: Omit<ActivityLog, "id" | "actorId" | "actorName" | "actorRole" | "timestamp">) => void;
   toggleTheme: () => void;
@@ -73,6 +78,7 @@ export interface AppContextValue {
   updateMedicationSchedule: (schedule: MedicationSchedule) => void;
   deleteMedicationSchedule: (id: number) => void;
   addMedicationAdministration: (record: Omit<MedicationAdministration, "id">) => void;
+  addPrescription: (prescription: Prescription | Omit<Prescription, "id">) => void;
   addAppointment: (appointment: Omit<Appointment, "id">) => void;
   updateAppointment: (appointment: Appointment) => void;
   deleteAppointment: (id: number) => void;
@@ -91,7 +97,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
   const [dataLoading, setDataLoading] = useState(false);
+  const [idleWarningSeconds, setIdleWarningSeconds] = useState<number | null>(null);
   const [toasts, setToasts] = useState<Array<{ id: number; message: string; type: "success" | "error" | "info" }>>([]);
+  const lastActivityRef = useRef(Date.now());
+  const idleSignOutInProgressRef = useRef(false);
   const [theme, setTheme] = useState<"light" | "dark">(() => {
     const stored = localStorage.getItem("stjude-theme");
     return stored === "dark" ? "dark" : "light";
@@ -177,15 +186,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await refreshData();
   };
 
-  const signOut = async () => {
+  const signOut = useCallback(async (message = "Logged out") => {
     logActivity({ action: "Signed out", entity: "Session", summary: `${currentUser.name} signed out.`, severity: "info" });
     await backendAuth.signOut().catch(() => undefined);
     setIsAuthenticated(false);
     setCurrentUserId(1);
     setData(emptyAppData);
     setDataLoading(false);
-    showToast("Logged out", "info");
-  };
+    setIdleWarningSeconds(null);
+    idleSignOutInProgressRef.current = false;
+    showToast(message, "info");
+  }, [currentUser.name, logActivity, showToast]);
 
   useEffect(() => {
     let cancelled = false;
@@ -234,6 +245,72 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    if (!isAuthenticated) {
+      setIdleWarningSeconds(null);
+      idleSignOutInProgressRef.current = false;
+      return;
+    }
+
+    const markActivity = () => {
+      const now = Date.now();
+      lastActivityRef.current = now;
+      localStorage.setItem(lastActivityStorageKey, String(now));
+      setIdleWarningSeconds(null);
+    };
+
+    const syncActivity = (event: StorageEvent) => {
+      if (event.key !== lastActivityStorageKey || !event.newValue) return;
+      const activityAt = Number(event.newValue);
+      if (Number.isFinite(activityAt)) {
+        lastActivityRef.current = Math.max(lastActivityRef.current, activityAt);
+        setIdleWarningSeconds(null);
+      }
+    };
+
+    markActivity();
+    const activityEvents: Array<keyof WindowEventMap> = ["mousemove", "mousedown", "keydown", "scroll", "touchstart", "focus"];
+    activityEvents.forEach((eventName) => window.addEventListener(eventName, markActivity, { passive: true }));
+    window.addEventListener("storage", syncActivity);
+
+    const idleTimer = window.setInterval(() => {
+      const storedActivity = Number(localStorage.getItem(lastActivityStorageKey));
+      const lastActivityAt = Number.isFinite(storedActivity) ? Math.max(storedActivity, lastActivityRef.current) : lastActivityRef.current;
+      const remainingMs = idleTimeoutMs - (Date.now() - lastActivityAt);
+
+      if (remainingMs <= 0) {
+        if (!idleSignOutInProgressRef.current) {
+          idleSignOutInProgressRef.current = true;
+          signOut("Logged out due to inactivity.");
+        }
+        return;
+      }
+
+      setIdleWarningSeconds(remainingMs <= idleWarningMs ? Math.ceil(remainingMs / 1000) : null);
+    }, 1000);
+
+    const refreshTimer = window.setInterval(async () => {
+      const idleFor = Date.now() - lastActivityRef.current;
+      if (document.hidden || idleFor >= idleTimeoutMs || idleSignOutInProgressRef.current) return;
+      try {
+        const session = await backendAuth.getSession();
+        if (!session?.user && !idleSignOutInProgressRef.current) {
+          idleSignOutInProgressRef.current = true;
+          await signOut("Your session expired. Please sign in again.");
+        }
+      } catch {
+        // Keep transient network errors from signing the user out while they are still active.
+      }
+    }, sessionRefreshMs);
+
+    return () => {
+      activityEvents.forEach((eventName) => window.removeEventListener(eventName, markActivity));
+      window.removeEventListener("storage", syncActivity);
+      window.clearInterval(idleTimer);
+      window.clearInterval(refreshTimer);
+    };
+  }, [isAuthenticated, signOut]);
+
+  useEffect(() => {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem("stjude-theme", theme);
   }, [theme]);
@@ -273,12 +350,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
     updateMedicationSchedule: (schedule) => setData((prev) => ({ ...prev, medicationSchedules: prev.medicationSchedules.map((item) => item.id === schedule.id ? schedule : item) })),
     deleteMedicationSchedule: (id) => setData((prev) => ({ ...prev, medicationSchedules: prev.medicationSchedules.filter((item) => item.id !== id) })),
     addMedicationAdministration: (record) => setData((prev) => ({ ...prev, medicationAdministrations: [{ ...record, id: nextId(prev.medicationAdministrations) }, ...prev.medicationAdministrations] })),
+    addPrescription: (prescription) => setData((prev) => ({ ...prev, prescriptions: [{ ...prescription, id: "id" in prescription ? prescription.id : nextId(prev.prescriptions) }, ...prev.prescriptions] })),
     addAppointment: (appointment) => setData((prev) => ({ ...prev, appointments: [{ ...appointment, id: nextId(prev.appointments) }, ...prev.appointments] })),
     updateAppointment: (appointment) => setData((prev) => ({ ...prev, appointments: prev.appointments.map((item) => item.id === appointment.id ? appointment : item) })),
     deleteAppointment: (id) => setData((prev) => ({ ...prev, appointments: prev.appointments.filter((item) => item.id !== id) })),
   }), [data, currentUser, theme, isAuthenticated, authLoading, dataLoading, showToast, logActivity]);
 
-  return <AppContext.Provider value={value}>{children}<ToastViewport toasts={toasts} onDismiss={(id) => setToasts((current) => current.filter((toast) => toast.id !== id))} /></AppContext.Provider>;
+  return <AppContext.Provider value={value}>{children}{idleWarningSeconds !== null && <IdleWarning seconds={idleWarningSeconds} onStaySignedIn={() => { lastActivityRef.current = Date.now(); localStorage.setItem(lastActivityStorageKey, String(lastActivityRef.current)); setIdleWarningSeconds(null); }} onSignOut={() => signOut()} />}<ToastViewport toasts={toasts} onDismiss={(id) => setToasts((current) => current.filter((toast) => toast.id !== id))} /></AppContext.Provider>;
+}
+
+function IdleWarning({ seconds, onStaySignedIn, onSignOut }: { seconds: number; onStaySignedIn: () => void; onSignOut: () => void }) {
+  return (
+    <div className="app-modal-backdrop idle-warning-backdrop" role="alertdialog" aria-modal="true" aria-labelledby="idle-warning-title" aria-describedby="idle-warning-copy">
+      <section className="app-modal idle-warning-modal">
+        <div className="modal-header">
+          <h2 id="idle-warning-title">Session expiring soon</h2>
+        </div>
+        <p id="idle-warning-copy" className="section-note">You will be logged out in {seconds} seconds due to inactivity.</p>
+        <div className="form-actions">
+          <button type="button" className="secondary-btn" onClick={onSignOut}>Sign Out</button>
+          <button type="button" className="primary-btn" onClick={onStaySignedIn}>Stay Signed In</button>
+        </div>
+      </section>
+    </div>
+  );
 }
 
 function ToastViewport({ toasts, onDismiss }: { toasts: Array<{ id: number; message: string; type: "success" | "error" | "info" }>; onDismiss: (id: number) => void }) {

@@ -1,8 +1,20 @@
-import { ActivityLog, AppData, Appointment, CheckupRecord, Employee, MedicationAdministration, MedicationSchedule, Patient, PatientDischargeInput, PayrollRecord, Role, User } from "../types";
+import { ActivityLog, AppData, Appointment, CheckupRecord, Employee, MedicationAdministration, MedicationSchedule, Patient, PatientDischargeInput, PayrollRecord, Prescription, Role, User } from "../types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3001/api";
 
 type BackendRole = "SUPER_ADMIN" | "STAFF" | "DOCTOR";
+
+export class ApiError extends Error {
+  status?: number;
+  code: "network" | "server" | "client";
+
+  constructor(message: string, options: { status?: number; code?: "network" | "server" | "client" } = {}) {
+    super(message);
+    this.name = "ApiError";
+    this.status = options.status;
+    this.code = options.code ?? (options.status && options.status >= 500 ? "server" : "client");
+  }
+}
 
 const roleFromApi = (role: BackendRole): Role => {
   if (role === "SUPER_ADMIN") return "Super admin";
@@ -24,18 +36,26 @@ const statusFromApi = (status: string) => {
 const statusToApi = (status: string) => status.toUpperCase().replace(/\s+/g, "_");
 
 async function apiFetch<T>(endpoint: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    credentials: "include",
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...options?.headers,
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      credentials: "include",
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+      },
+    });
+  } catch {
+    throw new ApiError("Network connection failed", { code: "network" });
+  }
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: "Request failed" }));
-    throw new Error(error.error ?? "Request failed");
+    throw new ApiError(error.error ?? "Request failed", {
+      status: response.status,
+      code: response.status >= 500 ? "server" : "client",
+    });
   }
 
   if (response.status === 204) return undefined as T;
@@ -56,7 +76,7 @@ export const backendAuth = {
 
 export const backendApi = {
   async loadAppData(): Promise<Partial<AppData>> {
-    const [patients, checkups, employees, payrollRecords, forms, users, activityLogs, medicationSchedules, medicationAdministrations, appointments] = await Promise.all([
+    const [patients, checkups, employees, payrollRecords, forms, users, activityLogs, medicationSchedules, medicationAdministrations, prescriptions, appointments] = await Promise.all([
       apiFetch<{ data: any[] }>("/patients"),
       apiFetch<{ data: any[] }>("/checkups").catch(() => ({ data: [] })),
       apiFetch<{ data: any[] }>("/employees"),
@@ -66,6 +86,7 @@ export const backendApi = {
       apiFetch<{ data: any[] }>("/activity-logs").catch(() => ({ data: [] })),
       apiFetch<{ data: any[] }>("/medications/schedules").catch(() => ({ data: [] })),
       apiFetch<{ data: any[] }>("/medications/administrations").catch(() => ({ data: [] })),
+      apiFetch<{ data: any[] }>("/medications/prescriptions").catch(() => ({ data: [] })),
       apiFetch<{ data: any[] }>("/appointments").catch(() => ({ data: [] })),
     ]);
 
@@ -88,6 +109,7 @@ export const backendApi = {
       activityLogs: activityLogs.data.map(activityLogFromApi),
       medicationSchedules: medicationSchedules.data.map(medicationScheduleFromApi),
       medicationAdministrations: medicationAdministrations.data.map(medicationAdministrationFromApi),
+      prescriptions: prescriptions.data.map(prescriptionFromApi),
       appointments: appointments.data.map(appointmentFromApi),
     };
   },
@@ -146,6 +168,11 @@ export const backendApi = {
   updateMedicationSchedule: (schedule: MedicationSchedule) => apiFetch<{ data: any }>(`/medications/schedules/${schedule.id}`, { method: "PUT", body: JSON.stringify(medicationScheduleToApi(schedule)) }),
   deleteMedicationSchedule: (id: number) => apiFetch<void>(`/medications/schedules/${id}`, { method: "DELETE" }),
   createMedicationAdministration: (record: Omit<MedicationAdministration, "id">) => apiFetch<{ data: any }>("/medications/administrations", { method: "POST", body: JSON.stringify(medicationAdministrationToApi(record)) }),
+  async createPrescription(prescription: Omit<Prescription, "id">) {
+    const result = await apiFetch<{ data: any }>("/medications/prescriptions", { method: "POST", body: JSON.stringify(prescriptionToApi(prescription)) });
+    return prescriptionFromApi(result.data);
+  },
+  prescriptionPdfUrl: (id: number) => `${API_BASE_URL}/medications/prescriptions/${id}/pdf`,
   createAppointment: (appointment: Omit<Appointment, "id">) => apiFetch<{ data: any }>("/appointments", { method: "POST", body: JSON.stringify(appointmentToApi(appointment)) }),
   updateAppointment: (appointment: Appointment) => apiFetch<{ data: any }>(`/appointments/${appointment.id}`, { method: "PUT", body: JSON.stringify(appointmentToApi(appointment)) }),
   deleteAppointment: (id: number) => apiFetch<void>(`/appointments/${id}`, { method: "DELETE" }),
@@ -160,6 +187,7 @@ function employeeFromApi(item: any): Employee {
     lastName: item.lastName,
     profileImageUrl: item.profileImageUrl ?? undefined,
     profileImageKey: item.profileImageKey ?? undefined,
+    sex: item.sex === "FEMALE" ? "Female" : "Male",
     position: item.position,
     department: item.department,
     email: item.email ?? "",
@@ -301,6 +329,45 @@ function medicationAdministrationFromApi(item: any): MedicationAdministration {
   };
 }
 
+function prescriptionFromApi(item: any): Prescription {
+  return {
+    id: item.id,
+    patientId: item.patientId,
+    prescriptionDate: item.prescriptionDate?.slice(0, 10),
+    items: Array.isArray(item.items) ? item.items.map((row: any) => ({
+      medication: row.medication ?? "",
+      dosage: row.dosage ?? "",
+      frequency: row.frequency ?? "",
+      duration: row.duration ?? undefined,
+      quantity: row.quantity ?? undefined,
+      instructions: row.instructions ?? undefined,
+    })) : [],
+    notes: item.notes ?? undefined,
+    prescribedBy: item.prescribedBy,
+    licenseNo: item.licenseNo ?? undefined,
+    ptrNo: item.ptrNo ?? undefined,
+    s2No: item.s2No ?? undefined,
+  };
+}
+
+function prescriptionToApi(prescription: Omit<Prescription, "id"> | Prescription) {
+  return {
+    ...prescription,
+    notes: prescription.notes || null,
+    licenseNo: prescription.licenseNo || null,
+    ptrNo: prescription.ptrNo || null,
+    s2No: prescription.s2No || null,
+    items: prescription.items.map((item) => ({
+      medication: item.medication,
+      dosage: item.dosage,
+      frequency: item.frequency,
+      duration: item.duration || null,
+      quantity: item.quantity || null,
+      instructions: item.instructions || null,
+    })),
+  };
+}
+
 function appointmentFromApi(item: any): Appointment {
   return {
     id: item.id,
@@ -339,6 +406,7 @@ function employeeToApi(employee: Employee | Omit<Employee, "id"> | (Omit<Employe
     ...employee,
     profileImageUrl: employee.profileImageUrl || null,
     profileImageKey: employee.profileImageKey || null,
+    sex: employee.sex.toUpperCase(),
     status: employee.status.toUpperCase(),
   };
 }

@@ -125,6 +125,7 @@ model Employee {
   lastName        String
   profileImageUrl String?
   profileImageKey String?
+  sex             Sex             @default(MALE)
   position        String
   department      String
   email           String?
@@ -175,6 +176,7 @@ model Patient {
   checkups               CheckupRecord[]
   medicationSchedules    MedicationSchedule[]
   medicationAdministrations MedicationAdministration[]
+  prescriptions          Prescription[]
   appointments           Appointment[]
 }
 
@@ -290,6 +292,22 @@ model MedicationAdministration {
 
   schedule     MedicationSchedule?            @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
   patient      Patient                        @relation(fields: [patientId], references: [id], onDelete: Cascade)
+}
+
+model Prescription {
+  id             Int      @id @default(autoincrement())
+  patientId      Int
+  prescriptionDate DateTime @default(now())
+  items          Json
+  notes          String?
+  prescribedBy   String
+  licenseNo      String?
+  ptrNo          String?
+  s2No           String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  patient        Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
 }
 
 model Appointment {

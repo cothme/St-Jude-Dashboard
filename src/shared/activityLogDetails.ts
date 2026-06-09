@@ -41,6 +41,7 @@ export function employeeLogDetails(employee: Employee | Omit<Employee, "id">, pr
     ["employeeCode", "Employee code"],
     ["firstName", "First name"],
     ["lastName", "Last name"],
+    ["sex", "Gender"],
     ["position", "Position"],
     ["department", "Department"],
     ["baseSalary", "Base salary"],

@@ -1,4 +1,4 @@
-import { KeyboardEvent, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes, useEffect, useId, useState } from "react";
+import { ButtonHTMLAttributes, KeyboardEvent, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes, useEffect, useId, useState } from "react";
 import { Link } from "react-router-dom";
 import { Search, X } from "lucide-react";
 import { backendApi } from "../services/apiClient";
@@ -27,10 +27,10 @@ type FormSelectProps = BaseFieldProps & Omit<SelectHTMLAttributes<HTMLSelectElem
   children: ReactNode;
 };
 
-export function FieldShell({ label, error, required, className = "", children }: BaseFieldProps & { required?: boolean; children: ReactNode }) {
+export function FieldShell({ label, error, required, optional, className = "", children }: BaseFieldProps & { required?: boolean; optional?: boolean; children: ReactNode }) {
   return (
     <label className={`form-field ${error ? "has-error" : ""} ${className}`.trim()}>
-      <span>{label}{required && <b aria-hidden="true"> *</b>}</span>
+      <span>{label}{required && <b aria-hidden="true"> *</b>}{optional && <small>(Optional)</small>}</span>
       {children}
       {error && <small className="field-error">{error}</small>}
     </label>
@@ -39,27 +39,36 @@ export function FieldShell({ label, error, required, className = "", children }:
 
 export function FormInput({ label, error, className, required, value, onChange, ...props }: FormInputProps) {
   const id = useId();
+  const [nativeError, setNativeError] = useState("");
+  const fieldError = error || nativeError;
+  const showOptional = !required && !props.disabled && !props.readOnly;
   return (
-    <FieldShell label={label} error={error} required={required} className={className}>
-      <input id={id} required={required} aria-invalid={Boolean(error)} value={value} onChange={(event) => onChange(event.target.value)} {...props} />
+    <FieldShell label={label} error={fieldError} required={required} optional={showOptional} className={className}>
+      <input id={id} required={required} aria-invalid={Boolean(fieldError)} value={value} onInvalid={(event) => setNativeError(event.currentTarget.validationMessage)} onInput={(event) => setNativeError(event.currentTarget.validationMessage)} onChange={(event) => { setNativeError(""); onChange(event.target.value); }} {...props} />
     </FieldShell>
   );
 }
 
 export function FormTextarea({ label, error, className, required, value, onChange, ...props }: FormTextareaProps) {
   const id = useId();
+  const [nativeError, setNativeError] = useState("");
+  const fieldError = error || nativeError;
+  const showOptional = !required && !props.disabled && !props.readOnly;
   return (
-    <FieldShell label={label} error={error} required={required} className={`form-field-wide ${className ?? ""}`}>
-      <textarea id={id} required={required} aria-invalid={Boolean(error)} value={value} onChange={(event) => onChange(event.target.value)} {...props} />
+    <FieldShell label={label} error={fieldError} required={required} optional={showOptional} className={`form-field-wide ${className ?? ""}`}>
+      <textarea id={id} required={required} aria-invalid={Boolean(fieldError)} value={value} onInvalid={(event) => setNativeError(event.currentTarget.validationMessage)} onInput={(event) => setNativeError(event.currentTarget.validationMessage)} onChange={(event) => { setNativeError(""); onChange(event.target.value); }} {...props} />
     </FieldShell>
   );
 }
 
 export function FormSelect({ label, error, className, required, value, onChange, children, ...props }: FormSelectProps) {
   const id = useId();
+  const [nativeError, setNativeError] = useState("");
+  const fieldError = error || nativeError;
+  const showOptional = !required && !props.disabled;
   return (
-    <FieldShell label={label} error={error} required={required} className={className}>
-      <select id={id} required={required} aria-invalid={Boolean(error)} value={value} onChange={(event) => onChange(event.target.value)} {...props}>
+    <FieldShell label={label} error={fieldError} required={required} optional={showOptional} className={className}>
+      <select id={id} required={required} aria-invalid={Boolean(fieldError)} value={value} onInvalid={(event) => setNativeError(event.currentTarget.validationMessage)} onInput={(event) => setNativeError(event.currentTarget.validationMessage)} onChange={(event) => { setNativeError(""); onChange(event.target.value); }} {...props}>
         {children}
       </select>
     </FieldShell>
@@ -77,9 +86,11 @@ export function optionalNumber(value: string) {
   return value === "" ? undefined : Number(value);
 }
 
-export function CurrencyInput({ label, value, onChange, required, min = 0 }: { label: string; value: number; onChange: (value: number) => void; required?: boolean; min?: number }) {
+export function CurrencyInput({ label, value, onChange, required, min = 0, error }: { label: string; value: number; onChange: (value: number) => void; required?: boolean; min?: number; error?: string }) {
   const [draft, setDraft] = useState(() => value ? value.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "");
   const [isFocused, setIsFocused] = useState(false);
+  const [nativeError, setNativeError] = useState("");
+  const fieldError = error || nativeError;
 
   useEffect(() => {
     if (!isFocused) {
@@ -88,13 +99,15 @@ export function CurrencyInput({ label, value, onChange, required, min = 0 }: { l
   }, [isFocused, value]);
 
   return (
-    <FieldShell label={label} required={required} className="currency-field">
+    <FieldShell label={label} error={fieldError} required={required} optional={!required} className="currency-field">
       <span className="currency-prefix" aria-hidden="true">₱</span>
       <input
         required={required}
+        aria-invalid={Boolean(fieldError)}
         type="text"
         inputMode="decimal"
         value={draft}
+        onInvalid={(event) => setNativeError(event.currentTarget.validationMessage)}
         onFocus={() => {
           setIsFocused(true);
           setDraft(value ? String(value) : "");
@@ -109,6 +122,7 @@ export function CurrencyInput({ label, value, onChange, required, min = 0 }: { l
           setDraft(numericValue.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
         }}
         onChange={(event) => {
+          setNativeError("");
           const next = normalizeDecimalInput(event.target.value);
           setDraft(next);
           const numericValue = next ? Number(next) : 0;
@@ -116,6 +130,22 @@ export function CurrencyInput({ label, value, onChange, required, min = 0 }: { l
         }}
       />
     </FieldShell>
+  );
+}
+
+export function ActionIconButton({ label, icon, variant = "default", className = "", children, ...props }: {
+  label: string;
+  icon: ReactNode;
+  variant?: "default" | "primary" | "danger";
+  className?: string;
+  children?: ReactNode;
+} & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "aria-label">) {
+  const variantClass = variant === "danger" ? "danger" : variant === "primary" ? "primary-btn table-primary-action" : "";
+  return (
+    <button type="button" className={`icon-action ${variantClass} ${className}`.trim()} aria-label={label} title={label} {...props}>
+      {icon}
+      {children && <span className="sr-only">{children}</span>}
+    </button>
   );
 }
 
