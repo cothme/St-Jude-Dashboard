@@ -1,5 +1,6 @@
 import { Patient, Prescription } from "@prisma/client";
 import fs from "node:fs";
+import path from "node:path";
 import PDFDocument from "pdfkit";
 
 type PrescriptionWithPatient = Prescription & { patient: Patient };
@@ -16,6 +17,7 @@ type PrescriptionItem = {
 const headerName = "St. Jude's Psychiatric and Custodial Home";
 const headerAddress = "Lot 2 & 3 Blk. 5 Rodriguez St. Brgy. San Isidro Taytay, Rizal";
 const headerContact = "Tel. No. (02) 8 230-4355 / Cell No. 0999-2206013";
+const logoPath = path.join(process.cwd(), "assets", "stjude-logo.png");
 
 export function renderPrescription(record: PrescriptionWithPatient): Promise<Buffer> {
   return new Promise((resolve, reject) => {
@@ -38,9 +40,15 @@ function drawPrescription(doc: PDFKit.PDFDocument, record: PrescriptionWithPatie
 
   doc.fillColor("black").strokeColor("black").lineWidth(1);
   const rxFont = registerSymbolFont(doc);
-  doc.font("Times-Bold").fontSize(17).text(headerName, left, 36, { width, align: "center" });
-  doc.font("Times-Roman").fontSize(7.8).text(headerAddress, left, 56, { width, align: "center" });
-  doc.font("Times-Roman").fontSize(8).text(headerContact, left, 67, { width, align: "center" });
+  const logoSize = 48;
+  const headerTextLeft = fs.existsSync(logoPath) ? left + logoSize + 8 : left;
+  const headerTextWidth = fs.existsSync(logoPath) ? width - (logoSize + 8) : width;
+  if (fs.existsSync(logoPath)) {
+    doc.image(logoPath, left, 30, { fit: [logoSize, logoSize], align: "center", valign: "center" });
+  }
+  doc.font("Times-Bold").fontSize(16).text(headerName, headerTextLeft, 36, { width: headerTextWidth, align: "center" });
+  doc.font("Times-Roman").fontSize(7.8).text(headerAddress, headerTextLeft, 56, { width: headerTextWidth, align: "center" });
+  doc.font("Times-Roman").fontSize(8).text(headerContact, headerTextLeft, 67, { width: headerTextWidth, align: "center" });
   doc.moveTo(left - 2, 90).lineTo(right + 2, 90).stroke();
   doc.moveTo(left - 2, 94).lineTo(right + 2, 94).stroke();
 

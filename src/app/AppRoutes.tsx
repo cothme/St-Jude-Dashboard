@@ -7,7 +7,6 @@ import { Patients } from "../features/patients/Patients";
 import { Checkups } from "../features/checkups/Checkups";
 import { AppointmentsPage } from "../features/appointments/AppointmentsPage";
 import { MedicationsPage } from "../features/medications/MedicationsPage";
-import { MedicineLookupPrototype } from "../features/medications/MedicineLookupPrototype";
 import { FormsPage } from "../features/forms/FormsPage";
 import { Employees } from "../features/employees/Employees";
 import { Payroll } from "../features/payroll/Payroll";
@@ -24,7 +23,6 @@ export function AppRoutes() {
         <Route path="checkups" element={<Guard permission="checkups"><Checkups /></Guard>} />
         <Route path="appointments" element={<Guard permission="appointments"><AppointmentsPage /></Guard>} />
         <Route path="medications" element={<Guard permission="medications"><MedicationsPage /></Guard>} />
-        <Route path="medicine-lookup" element={<Guard permission="medications"><MedicineLookupPrototype /></Guard>} />
         <Route path="forms" element={<Guard permission="forms"><FormsPage /></Guard>} />
         <Route path="employees" element={<Guard permission="employees"><Employees /></Guard>} />
         <Route path="payroll" element={<Guard permission="payroll"><Payroll /></Guard>} />
