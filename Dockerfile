@@ -27,6 +27,7 @@ COPY --from=backend-build /app/backend/package*.json ./
 COPY --from=backend-build /app/backend/node_modules ./node_modules
 COPY --from=backend-build /app/backend/dist ./dist
 COPY --from=backend-build /app/backend/prisma ./prisma
+COPY --from=backend-build /app/backend/assets ./assets
 COPY --from=frontend-build /app/dist ./public
 EXPOSE 3001
 CMD ["npm", "run", "start:prod"]

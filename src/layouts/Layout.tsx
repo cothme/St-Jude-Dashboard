@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Activity, Banknote, ClipboardList, ClipboardPlus, FileText, Home, LogOut, Menu, Moon, Search, Shield, Sun, Syringe, Users, UserRoundCog, X } from "lucide-react";
+import { Activity, Banknote, ClipboardList, ClipboardPlus, FileText, Home, LogOut, Menu, Moon, Shield, Sun, Syringe, Users, UserRoundCog, X } from "lucide-react";
 import { Link, NavLink, Outlet } from "react-router-dom";
 import { canAccess } from "../auth";
 import stJudeLogo from "../assets/stjude-logo.png";
@@ -9,26 +9,46 @@ import { ProfileSettingsModal } from "../features/users/ProfileSettingsModal";
 
 const APP_VERSION = "1.0.0";
 
-const navItems = [
-  { to: "/", label: "Dashboard", permission: "dashboard", icon: Home },
-  { to: "/patients", label: "Patients", permission: "patients", icon: Users },
-  { to: "/checkups", label: "Checkups", permission: "checkups", icon: ClipboardPlus },
-  { to: "/appointments", label: "Appointments", permission: "appointments", icon: ClipboardList },
-  { to: "/medications", label: "Medications", permission: "medications", icon: Syringe },
-  { to: "/medicine-lookup", label: "Medicine Lookup", permission: "medications", icon: Search },
-  { to: "/forms", label: "Forms", permission: "forms", icon: FileText },
-  { to: "/employees", label: "Employees", permission: "employees", icon: UserRoundCog },
-  { to: "/payroll", label: "Payroll", permission: "payroll", icon: Banknote },
-  { to: "/users", label: "Users & Roles", permission: "users", icon: Shield },
-  { to: "/activity-logs", label: "Activity Logs", permission: "activityLogs", icon: Activity },
+const navSections = [
+  {
+    label: "Overview",
+    items: [{ to: "/", label: "Dashboard", permission: "dashboard", icon: Home }],
+  },
+  {
+    label: "Patient Care",
+    items: [
+      { to: "/patients", label: "Patients", permission: "patients", icon: Users },
+      { to: "/checkups", label: "Checkups", permission: "checkups", icon: ClipboardPlus },
+      { to: "/appointments", label: "Appointments", permission: "appointments", icon: ClipboardList },
+    ],
+  },
+  {
+    label: "Clinical",
+    items: [
+      { to: "/medications", label: "Medications", permission: "medications", icon: Syringe },
+      { to: "/forms", label: "Forms", permission: "forms", icon: FileText },
+    ],
+  },
+  {
+    label: "Administration",
+    items: [
+      { to: "/employees", label: "Employees", permission: "employees", icon: UserRoundCog },
+      { to: "/payroll", label: "Payroll", permission: "payroll", icon: Banknote },
+      { to: "/users", label: "Users & Roles", permission: "users", icon: Shield },
+      { to: "/activity-logs", label: "Activity Logs", permission: "activityLogs", icon: Activity },
+    ],
+  },
 ];
 
 export function Layout() {
   const { currentUser, signOut, theme, toggleTheme } = useApp();
   const [open, setOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
-  const visibleNavItems = navItems.filter((item) => canAccess(currentUser.role, item.permission));
-  const compactNav = visibleNavItems.length <= 7;
+  const visibleNavSections = navSections
+    .map((section) => ({ ...section, items: section.items.filter((item) => canAccess(currentUser.role, item.permission)) }))
+    .filter((section) => section.items.length > 0);
+  const visibleNavItemsCount = visibleNavSections.reduce((total, section) => total + section.items.length, 0);
+  const compactNav = visibleNavItemsCount <= 7;
   return (
     <div className="app-shell">
       <aside className={`sidebar ${open ? "open" : ""} ${compactNav ? "compact-nav" : ""}`}>
@@ -38,10 +58,17 @@ export function Layout() {
           <button className="icon-btn mobile-only" onClick={() => setOpen(false)}><X size={18} /></button>
         </div>
         <nav>
-          {visibleNavItems.map((item) => {
-            const Icon = item.icon;
-            return <NavLink key={item.to} to={item.to} end={item.to === "/"} onClick={() => setOpen(false)}><Icon size={18} />{item.label}</NavLink>;
-          })}
+          {visibleNavSections.map((section) => (
+            <div className="sidebar-nav-section" key={section.label}>
+              <span className="sidebar-nav-heading">{section.label}</span>
+              <div>
+                {section.items.map((item) => {
+                  const Icon = item.icon;
+                  return <NavLink key={item.to} to={item.to} end={item.to === "/"} onClick={() => setOpen(false)}><Icon size={18} />{item.label}</NavLink>;
+                })}
+              </div>
+            </div>
+          ))}
         </nav>
         <div className="sidebar-user">
           <small>Signed in as</small>
