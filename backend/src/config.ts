@@ -17,6 +17,8 @@ const authSecret = process.env.BETTER_AUTH_SECRET ?? "development-only-change-be
 const sessionMaxAgeMinutes = Number(process.env.SESSION_MAX_AGE_MINUTES ?? 60);
 const sessionRefreshAgeMinutes = Number(process.env.SESSION_REFRESH_AGE_MINUTES ?? 5);
 const sessionMaxAgeSeconds = Math.max(5, sessionMaxAgeMinutes) * 60;
+const rxNavCacheHours = Number(process.env.RXNAV_CACHE_HOURS ?? 12);
+const rxNavTimeoutMs = Number(process.env.RXNAV_TIMEOUT_MS ?? 6000);
 const isWeakAuthSecret =
   authSecret === "replace-with-a-long-random-secret" ||
   authSecret === "development-only-change-before-production" ||
@@ -46,5 +48,7 @@ export const config = {
   authSecret,
   sessionMaxAgeSeconds,
   sessionRefreshAgeSeconds: Math.min(Math.max(1, sessionRefreshAgeMinutes) * 60, sessionMaxAgeSeconds - 60),
+  rxNavCacheTtlMs: Math.max(1, rxNavCacheHours) * 60 * 60 * 1000,
+  rxNavTimeoutMs: Math.max(1000, rxNavTimeoutMs),
   jsonLimit: process.env.JSON_BODY_LIMIT ?? "2mb",
 };

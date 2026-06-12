@@ -3,6 +3,8 @@ import { Response, Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db.js";
 import { AuthedRequest, requireAuth, requireRole } from "../middleware/auth.js";
+import { createRateLimiter } from "../middleware/rateLimit.js";
+import { searchMedicines } from "../utils/medicineLookup.js";
 import { renderPrescription } from "../utils/prescription.js";
 
 const router = Router();
@@ -47,6 +49,14 @@ const prescriptionSchema = z.object({
   ptrNo: z.string().optional().nullable(),
   s2No: z.string().optional().nullable(),
 });
+const medicineLookupSchema = z.object({
+  q: z.string().trim().min(3).max(100),
+});
+const medicineLookupRateLimit = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 120,
+  message: "Too many medicine lookup requests. Please wait a moment and try again.",
+});
 
 function doctorPatientWhere(req: AuthedRequest) {
   return req.user?.role === Role.DOCTOR
@@ -76,6 +86,13 @@ function prescriptionDoctorName(employee: { firstName: string; lastName: string;
 }
 
 router.use(requireAuth);
+
+router.get("/lookup", medicineLookupRateLimit, async (req, res) => {
+  const { q } = medicineLookupSchema.parse(req.query);
+  const lookup = await searchMedicines(q);
+  res.setHeader("Cache-Control", "private, max-age=300");
+  res.json({ data: lookup.results, meta: { cached: lookup.cached } });
+});
 
 router.get("/schedules", async (req: AuthedRequest, res) => {
   const schedules = await prisma.medicationSchedule.findMany({

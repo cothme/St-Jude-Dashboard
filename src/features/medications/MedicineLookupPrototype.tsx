@@ -1,90 +1,20 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { ClipboardPlus, Search, Syringe } from "lucide-react";
+import { backendApi } from "../../services/apiClient";
 import { Badge, Page } from "../../shared/ui";
-
-type RxConcept = {
-  rxcui: string;
-  name: string;
-  synonym?: string;
-  tty?: string;
-  score?: string;
-  source?: string;
-};
-
-type RxNavResponse = {
-  drugGroup?: {
-    conceptGroup?: Array<{
-      tty?: string;
-      conceptProperties?: RxConcept[];
-    }>;
-  };
-};
-
-type RxApproximateResponse = {
-  approximateGroup?: {
-    candidate?: Array<{
-      rxcui?: string;
-      name?: string;
-      score?: string;
-      source?: string;
-    }>;
-  };
-};
-
-const rxTermLabels: Record<string, string> = {
-  SCD: "Clinical drug",
-  SBD: "Branded drug",
-  GPCK: "Generic pack",
-  BPCK: "Brand pack",
-  SCDC: "Ingredient + strength",
-  BN: "Brand name",
-  IN: "Ingredient",
-  APPROX: "Approximate match",
-};
-
-function flattenRxNavResults(payload: RxNavResponse) {
-  const groups = payload.drugGroup?.conceptGroup ?? [];
-  const seen = new Set<string>();
-  return groups.flatMap((group) => group.conceptProperties ?? [])
-    .filter((item) => {
-      if (!item.rxcui || seen.has(item.rxcui)) return false;
-      seen.add(item.rxcui);
-      return true;
-    })
-    .slice(0, 24);
-}
-
-function flattenApproximateResults(payload: RxApproximateResponse) {
-  const seen = new Set<string>();
-  return (payload.approximateGroup?.candidate ?? [])
-    .filter((item) => item.rxcui && item.name)
-    .map((item) => ({
-      rxcui: item.rxcui ?? "",
-      name: item.name ?? "",
-      tty: "APPROX",
-      score: item.score,
-      source: item.source,
-    }))
-    .filter((item) => {
-      const key = `${item.rxcui}-${item.name}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .slice(0, 24);
-}
+import { MedicineLookupResult } from "../../types";
 
 export function MedicineLookupPrototype() {
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<RxConcept[]>([]);
-  const [selected, setSelected] = useState<RxConcept | null>(null);
+  const [results, setResults] = useState<MedicineLookupResult[]>([]);
+  const [selected, setSelected] = useState<MedicineLookupResult | null>(null);
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [error, setError] = useState("");
   const requestIdRef = useRef(0);
   const canSearch = query.trim().length >= 3;
   const groupedResults = useMemo(() => {
-    return results.reduce<Record<string, RxConcept[]>>((groups, result) => {
-      const key = result.tty ?? "Other";
+    return results.reduce<Record<string, MedicineLookupResult[]>>((groups, result) => {
+      const key = result.type || "Other";
       groups[key] = [...(groups[key] ?? []), result];
       return groups;
     }, {});
@@ -107,21 +37,10 @@ export function MedicineLookupPrototype() {
     const requestId = requestIdRef.current + 1;
     requestIdRef.current = requestId;
     try {
-      const approximateResponse = await fetch(`https://rxnav.nlm.nih.gov/REST/Prescribe/approximateTerm.json?term=${encodeURIComponent(term)}&maxEntries=16&option=1`);
-      if (!approximateResponse.ok) throw new Error("Medicine lookup failed");
-      const approximatePayload = await approximateResponse.json() as RxApproximateResponse;
-      let nextResults: RxConcept[] = flattenApproximateResults(approximatePayload);
-
-      if (nextResults.length === 0) {
-        const drugResponse = await fetch(`https://rxnav.nlm.nih.gov/REST/drugs.json?name=${encodeURIComponent(term)}`);
-        if (!drugResponse.ok) throw new Error("Medicine lookup failed");
-        const drugPayload = await drugResponse.json() as RxNavResponse;
-        nextResults = flattenRxNavResults(drugPayload);
-      }
-
+      const response = await backendApi.searchMedicines(term);
       if (requestId !== requestIdRef.current) return;
-      setResults(nextResults);
-      setSelected(nextResults[0] ?? null);
+      setResults(response.data);
+      setSelected(response.data[0] ?? null);
       setStatus("success");
     } catch {
       if (requestId !== requestIdRef.current) return;
@@ -164,7 +83,7 @@ export function MedicineLookupPrototype() {
           <div className="medicine-result-list">
             {Object.entries(groupedResults).map(([tty, items]) => (
               <div className="medicine-result-group" key={tty}>
-                <span>{rxTermLabels[tty] ?? tty}</span>
+                <span>{tty}</span>
                 {items.map((item) => (
                   <button key={item.rxcui} className={selected?.rxcui === item.rxcui ? "medicine-result-card active" : "medicine-result-card"} onClick={() => setSelected(item)}>
                     <Syringe size={17} />
@@ -187,7 +106,7 @@ export function MedicineLookupPrototype() {
               <div className="detail-list">
                 <p><span>Name</span>{selected.name}</p>
                 <p><span>RxCUI</span>{selected.rxcui}</p>
-                <p><span>Type</span>{rxTermLabels[selected.tty ?? ""] ?? selected.tty ?? "N/A"}</p>
+                <p><span>Type</span>{selected.type || "N/A"}</p>
                 <p><span>Match score</span>{selected.score ?? "N/A"}</p>
                 <p><span>Source</span>{selected.source ?? "N/A"}</p>
                 <p><span>Synonym</span>{selected.synonym || "N/A"}</p>

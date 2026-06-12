@@ -1,11 +1,11 @@
-import { FormEvent, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes, useEffect, useId, useMemo, useState } from "react";
+import { FormEvent, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Activity, ArrowUpDown, Banknote, CalendarClock, ClipboardPlus, ClipboardList, Download, FileSignature, FileText, Home, LogOut, Menu, Moon, Pencil, Plus, Search, Shield, Syringe, Sun, Trash2, Users, UserRoundCog, X } from "lucide-react";
-import { ActivityLog, AppData, Appointment, CareFormSubmission, CheckupRecord, Employee, FormCategory, MedicationAdministration, MedicationSchedule, Patient, PatientDischargeInput, PayrollRecord, Prescription, PrescriptionItem, Role, User } from "../../types";
+import { ActivityLog, AppData, Appointment, CareFormSubmission, CheckupRecord, Employee, FormCategory, MedicationAdministration, MedicationSchedule, MedicineLookupResult, Patient, PatientDischargeInput, PayrollRecord, Prescription, PrescriptionItem, Role, User } from "../../types";
 import { ageFromBirthDate, calculateBmi, formatCurrency, formatDate, nextId } from "../../utils";
 import { useSearchParams } from "react-router-dom";
 import { useApp } from "../../app/AppProvider";
 import { backendApi, backendAuth } from "../../services/apiClient";
-import { ActionIconButton, Badge, CurrencyInput, FormInput, FormSelect, FormTextarea, Metric, Modal, Page, PaginationControls, ProfilePhotoField, SearchBox, Avatar, RecordDetailModal, recordRowProps } from "../../shared/ui";
+import { ActionIconButton, Badge, CurrencyInput, FieldShell, FormInput, FormSelect, FormTextarea, Metric, Modal, Page, PaginationControls, ProfilePhotoField, SearchBox, Avatar, RecordDetailModal, recordRowProps } from "../../shared/ui";
 import { nextSort, SortableHeader, sortItems, type SortState } from "../../shared/sorting";
 import { deleteReplacedProfilePhoto, discardDraftProfilePhoto } from "../../shared/profilePhotos";
 import { appointmentLogDetails, checkupLogDetails, employeeLogDetails, medicationAdministrationLogDetails, medicationScheduleLogDetails, patientDischargeLogDetails, patientLogDetails, payrollLogDetails, userLogDetails } from "../../shared/activityLogDetails";
@@ -234,6 +234,125 @@ export function MedicationsPage() {
   );
 }
 
+function MedicationAutocomplete({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const listboxId = useId();
+  const requestIdRef = useRef(0);
+  const skipNextLookupRef = useRef("");
+  const [results, setResults] = useState<MedicineLookupResult[]>([]);
+  const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [isOpen, setIsOpen] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
+
+  useEffect(() => {
+    const term = value.trim();
+    if (skipNextLookupRef.current === term) {
+      skipNextLookupRef.current = "";
+      setResults([]);
+      setStatus("idle");
+      return;
+    }
+    if (term.length < 3) {
+      requestIdRef.current += 1;
+      setResults([]);
+      setStatus("idle");
+      setHighlightedIndex(0);
+      return;
+    }
+
+    const timer = window.setTimeout(async () => {
+      const requestId = requestIdRef.current + 1;
+      requestIdRef.current = requestId;
+      setStatus("loading");
+      try {
+        const response = await backendApi.searchMedicines(term);
+        if (requestId !== requestIdRef.current) return;
+        setResults(response.data);
+        setStatus("success");
+        setHighlightedIndex(0);
+        setIsOpen(true);
+      } catch {
+        if (requestId !== requestIdRef.current) return;
+        setResults([]);
+        setStatus("error");
+        setIsOpen(true);
+      }
+    }, 450);
+
+    return () => window.clearTimeout(timer);
+  }, [value]);
+
+  const selectResult = (result: MedicineLookupResult) => {
+    skipNextLookupRef.current = result.name;
+    onChange(result.name);
+    setResults([]);
+    setStatus("idle");
+    setIsOpen(false);
+  };
+
+  return (
+    <FieldShell label="Medication" required className="medicine-autocomplete-field">
+      <div className="medicine-autocomplete">
+        <input
+          required
+          role="combobox"
+          aria-autocomplete="list"
+          aria-controls={listboxId}
+          aria-expanded={isOpen && (status === "loading" || status === "error" || results.length > 0)}
+          aria-activedescendant={isOpen && results[highlightedIndex] ? `${listboxId}-${results[highlightedIndex].rxcui}` : undefined}
+          value={value}
+          onChange={(event) => {
+            onChange(event.target.value);
+            setIsOpen(true);
+          }}
+          onFocus={() => setIsOpen(true)}
+          onBlur={() => window.setTimeout(() => setIsOpen(false), 120)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              setIsOpen(false);
+              return;
+            }
+            if (!isOpen || results.length === 0) return;
+            if (event.key === "ArrowDown") {
+              event.preventDefault();
+              setHighlightedIndex((index) => Math.min(results.length - 1, index + 1));
+            } else if (event.key === "ArrowUp") {
+              event.preventDefault();
+              setHighlightedIndex((index) => Math.max(0, index - 1));
+            } else if (event.key === "Enter" && results[highlightedIndex]) {
+              event.preventDefault();
+              selectResult(results[highlightedIndex]);
+            }
+          }}
+          placeholder="Type a medicine or enter manually"
+        />
+        {isOpen && value.trim().length >= 3 && (
+          <div className="medicine-autocomplete-menu" id={listboxId} role="listbox">
+            {status === "loading" && <p>Searching medicines...</p>}
+            {status === "error" && <p>Lookup unavailable. You can still type the medicine manually.</p>}
+            {status === "success" && results.length === 0 && <p>No matches found. Manual entry is still available.</p>}
+            {results.map((result, index) => (
+              <button
+                key={`${result.rxcui}-${result.name}`}
+                id={`${listboxId}-${result.rxcui}`}
+                type="button"
+                role="option"
+                aria-selected={index === highlightedIndex}
+                className={index === highlightedIndex ? "active" : ""}
+                onMouseDown={(event) => event.preventDefault()}
+                onMouseEnter={() => setHighlightedIndex(index)}
+                onClick={() => selectResult(result)}
+              >
+                <strong>{result.name}</strong>
+                <span>{result.type}{result.score !== undefined ? ` - ${Math.round(result.score)}% match` : ""}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </FieldShell>
+  );
+}
+
 function PrescriptionForm({ prescription, patients, data, currentUser, onChange, onSubmit, onCancel }: { prescription: Omit<Prescription, "id">; patients: Patient[]; data: AppData; currentUser: User; onChange: (prescription: Omit<Prescription, "id">) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onCancel: () => void }) {
   const set = (patch: Partial<Omit<Prescription, "id">>) => onChange({ ...prescription, ...patch });
   const setItem = (index: number, patch: Partial<PrescriptionItem>) => set({ items: prescription.items.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item) });
@@ -270,10 +389,11 @@ function PrescriptionForm({ prescription, patients, data, currentUser, onChange,
       <FormInput label="Date" required type="date" value={prescription.prescriptionDate} onChange={(value) => set({ prescriptionDate: value })} />
       <div className="form-field form-field-wide prescription-items-field">
         <span>Medications <b aria-hidden="true">*</b></span>
+        <small className="medicine-lookup-disclaimer">Lookup assists medicine entry only. Verify final prescription details before saving.</small>
         <div className="prescription-item-list">
           {prescription.items.map((item, index) => (
             <div className="prescription-item-row" key={index}>
-              <FormInput label="Medication" required value={item.medication} onChange={(value) => setItem(index, { medication: value })} />
+              <MedicationAutocomplete value={item.medication} onChange={(value) => setItem(index, { medication: value })} />
               <FormInput label="Dosage" required value={item.dosage} onChange={(value) => setItem(index, { dosage: value })} />
               <FormSelect label="Frequency" required value={normalizeMedicationFrequency(item.frequency)} onChange={(value) => setItem(index, { frequency: value })}>
                 {medicationFrequencies.map((frequency) => <option key={frequency}>{frequency}</option>)}
