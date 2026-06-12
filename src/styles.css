@@ -1995,6 +1995,14 @@ td.medication-schedule-actions button {
   margin: 4px 0;
 }
 
+.medicine-lookup-disclaimer {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  text-transform: none;
+}
+
 .prescription-item-list {
   display: grid;
   gap: 14px;
@@ -2013,6 +2021,70 @@ td.medication-schedule-actions button {
 
 .prescription-item-row .form-field {
   min-width: 0;
+}
+
+.medicine-autocomplete {
+  min-width: 0;
+  position: relative;
+}
+
+.medicine-autocomplete > input {
+  width: 100%;
+}
+
+.medicine-autocomplete-menu {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 18px 48px var(--shadow-strong);
+  display: grid;
+  left: 0;
+  max-height: 280px;
+  overflow-y: auto;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 30;
+}
+
+.medicine-autocomplete-menu > p {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+  margin: 0;
+  padding: 12px;
+  text-transform: none;
+}
+
+.medicine-autocomplete-menu button {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--text);
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  text-align: left;
+}
+
+.medicine-autocomplete-menu button:last-child {
+  border-bottom: 0;
+}
+
+.medicine-autocomplete-menu button:hover,
+.medicine-autocomplete-menu button.active {
+  background: var(--hover-bg);
+}
+
+.medicine-autocomplete-menu strong {
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.medicine-autocomplete-menu span {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: none;
 }
 
 .prescription-item-row .form-field-wide {

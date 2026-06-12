@@ -166,6 +166,15 @@ export interface PrescriptionItem {
   instructions?: string;
 }
 
+export interface MedicineLookupResult {
+  rxcui: string;
+  name: string;
+  type: string;
+  synonym?: string;
+  score?: number;
+  source?: string;
+}
+
 export interface Prescription {
   id: number;
   patientId: number;
