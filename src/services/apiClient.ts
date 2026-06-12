@@ -1,4 +1,4 @@
-import { ActivityLog, AppData, Appointment, CheckupRecord, Employee, MedicationAdministration, MedicationSchedule, Patient, PatientDischargeInput, PayrollRecord, Prescription, Role, User } from "../types";
+import { ActivityLog, AppData, Appointment, CheckupRecord, Employee, MedicationAdministration, MedicationSchedule, MedicineLookupResult, Patient, PatientDischargeInput, PayrollRecord, Prescription, Role, User } from "../types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3001/api";
 
@@ -168,6 +168,7 @@ export const backendApi = {
   updateMedicationSchedule: (schedule: MedicationSchedule) => apiFetch<{ data: any }>(`/medications/schedules/${schedule.id}`, { method: "PUT", body: JSON.stringify(medicationScheduleToApi(schedule)) }),
   deleteMedicationSchedule: (id: number) => apiFetch<void>(`/medications/schedules/${id}`, { method: "DELETE" }),
   createMedicationAdministration: (record: Omit<MedicationAdministration, "id">) => apiFetch<{ data: any }>("/medications/administrations", { method: "POST", body: JSON.stringify(medicationAdministrationToApi(record)) }),
+  searchMedicines: (query: string) => apiFetch<{ data: MedicineLookupResult[]; meta: { cached: boolean } }>(`/medications/lookup?q=${encodeURIComponent(query)}`),
   async createPrescription(prescription: Omit<Prescription, "id">) {
     const result = await apiFetch<{ data: any }>("/medications/prescriptions", { method: "POST", body: JSON.stringify(prescriptionToApi(prescription)) });
     return prescriptionFromApi(result.data);
