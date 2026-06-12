@@ -38,7 +38,7 @@ const prescriptionItemSchema = z.object({
   instructions: z.string().optional().nullable(),
 });
 const prescriptionSchema = z.object({
-  patientId: z.number(),
+  patientId: z.number().int().positive(),
   prescriptionDate: z.string(),
   items: z.array(prescriptionItemSchema).min(1),
   notes: z.string().optional().nullable(),
@@ -69,6 +69,10 @@ async function enforceDoctorMedicationAccess(req: AuthedRequest, res: Response, 
     return false;
   }
   return true;
+}
+
+function prescriptionDoctorName(employee: { firstName: string; lastName: string; sex: string }) {
+  return `${employee.sex === "FEMALE" ? "Dra." : "Dr."} ${employee.firstName} ${employee.lastName}`;
 }
 
 router.use(requireAuth);
@@ -167,9 +171,35 @@ router.get("/prescriptions", async (req: AuthedRequest, res) => {
 router.post("/prescriptions", requireRole(Role.SUPER_ADMIN, Role.DOCTOR, Role.STAFF), async (req: AuthedRequest, res) => {
   const input = prescriptionSchema.parse(req.body);
   if (!(await enforceDoctorMedicationAccess(req, res, input.patientId))) return;
+  const patient = await prisma.patient.findUniqueOrThrow({
+    where: { id: input.patientId },
+    select: {
+      attendingDoctor: {
+        select: { id: true, firstName: true, lastName: true, sex: true, position: true, status: true },
+      },
+    },
+  });
+  let prescribedBy = input.prescribedBy.trim();
+  if (req.user?.role === Role.DOCTOR) {
+    const signedInDoctor = await prisma.employee.findFirst({
+      where: { id: req.user.linkedEmployeeId ?? -1, position: "Psychiatrist", status: "ACTIVE" },
+      select: { firstName: true, lastName: true, sex: true },
+    });
+    if (!signedInDoctor) {
+      return res.status(403).json({ error: "Doctor account is not linked to an active psychiatrist profile" });
+    }
+    prescribedBy = prescriptionDoctorName(signedInDoctor);
+  } else if (req.user?.role === Role.STAFF) {
+    const attendingDoctor = patient.attendingDoctor;
+    if (!attendingDoctor || attendingDoctor.position !== "Psychiatrist" || attendingDoctor.status !== "ACTIVE") {
+      return res.status(400).json({ error: "Selected patient does not have an active attending psychiatrist" });
+    }
+    prescribedBy = prescriptionDoctorName(attendingDoctor);
+  }
   const prescription = await prisma.prescription.create({
     data: {
       ...input,
+      prescribedBy,
       prescriptionDate: new Date(input.prescriptionDate),
       items: input.items,
     },

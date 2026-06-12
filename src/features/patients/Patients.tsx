@@ -239,7 +239,10 @@ function PatientDetail({ patient, canManage, onDischarge, onViewCheckup }: { pat
       {patient.status === "Discharged" ? (
         <div className="actions"><button className="primary-btn discharge-action-btn" onClick={() => setViewingDischarge(true)}>View Discharge Details</button></div>
       ) : (
-        canManage && <div className="actions"><button className="primary-btn discharge-action-btn" onClick={() => onDischarge(patient)}>Discharge Patient</button></div>
+        <div className="actions">
+          <Link className="primary-btn" to={`/medications?prescriptionPatientId=${patient.id}`}><FileText size={16} />Create Prescription</Link>
+          {canManage && <button className="secondary-btn discharge-action-btn" onClick={() => onDischarge(patient)}>Discharge Patient</button>}
+        </div>
       )}
       <div className="checkup-history-header">
         <div>

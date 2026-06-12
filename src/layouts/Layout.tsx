@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Activity, Banknote, ClipboardList, ClipboardPlus, FileText, Home, LogOut, Menu, Moon, Shield, Sun, Syringe, Users, UserRoundCog, X } from "lucide-react";
+import { Activity, Banknote, ClipboardList, ClipboardPlus, FileText, Home, LogOut, Menu, Moon, Search, Shield, Sun, Syringe, Users, UserRoundCog, X } from "lucide-react";
 import { Link, NavLink, Outlet } from "react-router-dom";
 import { canAccess } from "../auth";
 import stJudeLogo from "../assets/stjude-logo.png";
@@ -15,6 +15,7 @@ const navItems = [
   { to: "/checkups", label: "Checkups", permission: "checkups", icon: ClipboardPlus },
   { to: "/appointments", label: "Appointments", permission: "appointments", icon: ClipboardList },
   { to: "/medications", label: "Medications", permission: "medications", icon: Syringe },
+  { to: "/medicine-lookup", label: "Medicine Lookup", permission: "medications", icon: Search },
   { to: "/forms", label: "Forms", permission: "forms", icon: FileText },
   { to: "/employees", label: "Employees", permission: "employees", icon: UserRoundCog },
   { to: "/payroll", label: "Payroll", permission: "payroll", icon: Banknote },
