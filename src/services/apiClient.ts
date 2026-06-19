@@ -159,8 +159,8 @@ export const backendApi = {
     const result = await apiFetch<{ data: any }>("/users", { method: "POST", body: JSON.stringify({ name: user.name, email: user.email, profileImageUrl: user.profileImageUrl || null, profileImageKey: user.profileImageKey || null, password: user.password, role: roleToApi(user.role), linkedEmployeeId: user.linkedEmployeeId ?? null }) });
     return result;
   },
-  async updateUser(user: User) {
-    return apiFetch<{ data: any }>(`/users/${user.id}`, { method: "PUT", body: JSON.stringify({ name: user.name, profileImageUrl: user.profileImageUrl || null, profileImageKey: user.profileImageKey || null, role: roleToApi(user.role), linkedEmployeeId: user.linkedEmployeeId ?? null }) });
+  async updateUser(user: User & { password?: string }) {
+    return apiFetch<{ data: any }>(`/users/${user.id}`, { method: "PUT", body: JSON.stringify({ name: user.name, profileImageUrl: user.profileImageUrl || null, profileImageKey: user.profileImageKey || null, role: roleToApi(user.role), linkedEmployeeId: user.linkedEmployeeId ?? null, password: user.password || undefined }) });
   },
   deleteUser: (id: number | string) => apiFetch<void>(`/users/${id}`, { method: "DELETE" }),
   createActivityLog: (activity: Omit<ActivityLog, "id" | "actorId" | "actorName" | "actorRole" | "timestamp">) => apiFetch<{ data: any }>("/activity-logs", { method: "POST", body: JSON.stringify(activity) }),

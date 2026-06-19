@@ -16,6 +16,7 @@ const userUpdateSchema = z.object({
   profileImageKey: z.string().nullable().optional(),
   role: z.nativeEnum(Role).optional(),
   linkedEmployeeId: z.number().nullable().optional(),
+  password: z.string().min(12).optional(),
 });
 const userCreateSchema = z.object({
   name: z.string().min(1),
@@ -33,7 +34,7 @@ const profileSchema = z.object({
 });
 const passwordSchema = z.object({
   currentPassword: z.string().min(1),
-  newPassword: z.string().min(8),
+  newPassword: z.string().min(12),
 });
 const userSelect = { id: true, name: true, email: true, image: true, profileImageKey: true, role: true, linkedEmployeeId: true, createdAt: true, updatedAt: true } as any;
 
@@ -125,16 +126,39 @@ router.put("/:id", async (req, res) => {
     return res.status(400).json({ error: `${canonicalSuperAdminName} must remain the Super admin` });
   }
 
-  const user = await prisma.user.update({
-    where: { id: req.params.id },
-    data: {
-      name: isCanonicalSuperAdmin ? canonicalSuperAdminName : input.name,
-      image: input.profileImageUrl,
-      profileImageKey: input.profileImageKey,
-      role: isCanonicalSuperAdmin ? Role.SUPER_ADMIN : input.role,
-      linkedEmployeeId: input.linkedEmployeeId,
-    } as any,
-    select: userSelect,
+  if (isCanonicalSuperAdmin && input.password) {
+    return res.status(400).json({ error: "Use Change Password to update the Super admin password" });
+  }
+
+  const credentialAccount = input.password
+    ? await prisma.account.findFirst({ where: { userId: req.params.id, providerId: "credential" }, select: { id: true } })
+    : null;
+  if (input.password && !credentialAccount) {
+    return res.status(400).json({ error: "Password account not found" });
+  }
+  const passwordHash = input.password ? await hashPassword(input.password) : null;
+  const user = await prisma.$transaction(async (transaction) => {
+    const updatedUser = await transaction.user.update({
+      where: { id: req.params.id },
+      data: {
+        name: isCanonicalSuperAdmin ? canonicalSuperAdminName : input.name,
+        image: input.profileImageUrl,
+        profileImageKey: input.profileImageKey,
+        role: isCanonicalSuperAdmin ? Role.SUPER_ADMIN : input.role,
+        linkedEmployeeId: input.linkedEmployeeId,
+      } as any,
+      select: userSelect,
+    });
+    if (credentialAccount && passwordHash) {
+      await transaction.account.update({
+        where: { id: credentialAccount.id },
+        data: { password: passwordHash },
+      });
+      await transaction.session.deleteMany({
+        where: { userId: req.params.id },
+      });
+    }
+    return updatedUser;
   });
   res.json({ data: user });
 });
