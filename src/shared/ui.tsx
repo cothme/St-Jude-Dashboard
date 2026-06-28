@@ -1,4 +1,4 @@
-import { ButtonHTMLAttributes, KeyboardEvent, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes, useEffect, useId, useState } from "react";
+import { ButtonHTMLAttributes, KeyboardEvent, MouseEvent, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes, useEffect, useId, useState } from "react";
 import { Link } from "react-router-dom";
 import { Eye, EyeOff, Search, X } from "lucide-react";
 import { backendApi } from "../services/apiClient";
@@ -263,7 +263,19 @@ export function Badge({ children }: { children: ReactNode }) {
 }
 
 export function Modal({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
-  return <div className="app-modal-backdrop"><section className="app-modal"><div className="modal-header"><h2>{title}</h2><button className="icon-btn" onClick={onClose}><X size={18} /></button></div>{children}</section></div>;
+  const titleId = useId();
+  const closeOnBackdropClick = (event: MouseEvent<HTMLDivElement>) => {
+    if (event.target === event.currentTarget) onClose();
+  };
+
+  return (
+    <div className="app-modal-backdrop" onMouseDown={closeOnBackdropClick}>
+      <section className="app-modal" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+        <div className="modal-header"><h2 id={titleId}>{title}</h2><button className="icon-btn" onClick={onClose}><X size={18} /></button></div>
+        {children}
+      </section>
+    </div>
+  );
 }
 
 export function recordRowProps(onSelect: () => void, label: string) {

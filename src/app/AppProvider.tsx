@@ -1,4 +1,4 @@
-import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, MouseEvent, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { backendApi, backendAuth } from "../services/apiClient";
 import { ActivityLog, AppData, Appointment, CareFormSubmission, CheckupRecord, Employee, MedicationAdministration, MedicationSchedule, Patient, PayrollRecord, Prescription, Role, User } from "../types";
 import { calculateBmi, nextId } from "../utils";
@@ -360,8 +360,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
 }
 
 function IdleWarning({ seconds, onStaySignedIn, onSignOut }: { seconds: number; onStaySignedIn: () => void; onSignOut: () => void }) {
+  const staySignedInOnBackdropClick = (event: MouseEvent<HTMLDivElement>) => {
+    if (event.target === event.currentTarget) onStaySignedIn();
+  };
+
   return (
-    <div className="app-modal-backdrop idle-warning-backdrop" role="alertdialog" aria-modal="true" aria-labelledby="idle-warning-title" aria-describedby="idle-warning-copy">
+    <div className="app-modal-backdrop idle-warning-backdrop" role="alertdialog" aria-modal="true" aria-labelledby="idle-warning-title" aria-describedby="idle-warning-copy" onMouseDown={staySignedInOnBackdropClick}>
       <section className="app-modal idle-warning-modal">
         <div className="modal-header">
           <h2 id="idle-warning-title">Session expiring soon</h2>
