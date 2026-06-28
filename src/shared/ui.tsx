@@ -1,6 +1,6 @@
-import { ButtonHTMLAttributes, KeyboardEvent, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes, useEffect, useId, useState } from "react";
+import { ButtonHTMLAttributes, KeyboardEvent, MouseEvent, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes, useEffect, useId, useState } from "react";
 import { Link } from "react-router-dom";
-import { Search, X } from "lucide-react";
+import { Eye, EyeOff, Search, X } from "lucide-react";
 import { backendApi } from "../services/apiClient";
 import { UploadButton } from "../uploadthing";
 import { useApp } from "../app/AppProvider";
@@ -14,6 +14,7 @@ type BaseFieldProps = {
 type FormInputProps = BaseFieldProps & Omit<InputHTMLAttributes<HTMLInputElement>, "onChange"> & {
   value: string | number;
   onChange: (value: string) => void;
+  revealable?: boolean;
 };
 
 type FormTextareaProps = BaseFieldProps & Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "onChange"> & {
@@ -37,14 +38,42 @@ export function FieldShell({ label, error, required, optional, className = "", c
   );
 }
 
-export function FormInput({ label, error, className, required, value, onChange, ...props }: FormInputProps) {
+export function FormInput({ label, error, className, required, value, onChange, revealable = false, ...props }: FormInputProps) {
   const id = useId();
   const [nativeError, setNativeError] = useState("");
+  const [isRevealed, setIsRevealed] = useState(false);
   const fieldError = error || nativeError;
   const showOptional = !required && !props.disabled && !props.readOnly;
+  const input = (
+    <input
+      id={id}
+      required={required}
+      aria-invalid={Boolean(fieldError)}
+      value={value}
+      onInvalid={(event) => setNativeError(event.currentTarget.validationMessage)}
+      onInput={(event) => setNativeError(event.currentTarget.validationMessage)}
+      onChange={(event) => { setNativeError(""); onChange(event.target.value); }}
+      {...props}
+      type={revealable && props.type === "password" && isRevealed ? "text" : props.type}
+    />
+  );
   return (
     <FieldShell label={label} error={fieldError} required={required} optional={showOptional} className={className}>
-      <input id={id} required={required} aria-invalid={Boolean(fieldError)} value={value} onInvalid={(event) => setNativeError(event.currentTarget.validationMessage)} onInput={(event) => setNativeError(event.currentTarget.validationMessage)} onChange={(event) => { setNativeError(""); onChange(event.target.value); }} {...props} />
+      {revealable && props.type === "password" ? (
+        <span className="password-input">
+          {input}
+          <button
+            type="button"
+            className="password-reveal-btn"
+            aria-label={isRevealed ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`}
+            aria-pressed={isRevealed}
+            disabled={props.disabled}
+            onClick={() => setIsRevealed((current) => !current)}
+          >
+            {isRevealed ? <EyeOff size={18} /> : <Eye size={18} />}
+          </button>
+        </span>
+      ) : input}
     </FieldShell>
   );
 }
@@ -234,7 +263,19 @@ export function Badge({ children }: { children: ReactNode }) {
 }
 
 export function Modal({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
-  return <div className="app-modal-backdrop"><section className="app-modal"><div className="modal-header"><h2>{title}</h2><button className="icon-btn" onClick={onClose}><X size={18} /></button></div>{children}</section></div>;
+  const titleId = useId();
+  const closeOnBackdropClick = (event: MouseEvent<HTMLDivElement>) => {
+    if (event.target === event.currentTarget) onClose();
+  };
+
+  return (
+    <div className="app-modal-backdrop" onMouseDown={closeOnBackdropClick}>
+      <section className="app-modal" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+        <div className="modal-header"><h2 id={titleId}>{title}</h2><button className="icon-btn" onClick={onClose}><X size={18} /></button></div>
+        {children}
+      </section>
+    </div>
+  );
 }
 
 export function recordRowProps(onSelect: () => void, label: string) {

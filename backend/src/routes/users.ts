@@ -16,6 +16,7 @@ const userUpdateSchema = z.object({
   profileImageKey: z.string().nullable().optional(),
   role: z.nativeEnum(Role).optional(),
   linkedEmployeeId: z.number().nullable().optional(),
+  password: z.string().min(12).optional(),
 });
 const userCreateSchema = z.object({
   name: z.string().min(1),
@@ -33,9 +34,18 @@ const profileSchema = z.object({
 });
 const passwordSchema = z.object({
   currentPassword: z.string().min(1),
-  newPassword: z.string().min(8),
+  newPassword: z.string().min(12),
 });
 const userSelect = { id: true, name: true, email: true, image: true, profileImageKey: true, role: true, linkedEmployeeId: true, createdAt: true, updatedAt: true } as any;
+
+async function isActivePsychiatristEmployee(employeeId: number | null | undefined) {
+  if (!employeeId) return false;
+  const employee = await prisma.employee.findFirst({
+    where: { id: employeeId, position: "Psychiatrist", status: "ACTIVE" },
+    select: { id: true },
+  });
+  return Boolean(employee);
+}
 
 router.use(requireAuth);
 
@@ -83,6 +93,9 @@ router.post("/", async (req, res) => {
   if (input.role === Role.SUPER_ADMIN) {
     return res.status(400).json({ error: `${canonicalSuperAdminName} is the only Super admin account` });
   }
+  if (input.role === Role.DOCTOR && !(await isActivePsychiatristEmployee(input.linkedEmployeeId))) {
+    return res.status(400).json({ error: "Doctor accounts must be linked to an active psychiatrist employee" });
+  }
   await auth.api.signUpEmail({
     body: {
       name: input.name,
@@ -109,9 +122,11 @@ router.put("/:id", async (req, res) => {
   const currentUser = (req as AuthedRequest).user;
   const existing = await prisma.user.findUniqueOrThrow({
     where: { id: req.params.id },
-    select: { id: true, email: true, role: true },
+    select: { id: true, email: true, role: true, linkedEmployeeId: true },
   });
   const isCanonicalSuperAdmin = existing.email === canonicalSuperAdminEmail;
+  const nextRole = isCanonicalSuperAdmin ? Role.SUPER_ADMIN : input.role ?? existing.role;
+  const nextLinkedEmployeeId = input.linkedEmployeeId === undefined ? existing.linkedEmployeeId : input.linkedEmployeeId;
 
   if (!isCanonicalSuperAdmin && input.role === Role.SUPER_ADMIN) {
     return res.status(400).json({ error: `${canonicalSuperAdminName} is the only Super admin account` });
@@ -125,16 +140,43 @@ router.put("/:id", async (req, res) => {
     return res.status(400).json({ error: `${canonicalSuperAdminName} must remain the Super admin` });
   }
 
-  const user = await prisma.user.update({
-    where: { id: req.params.id },
-    data: {
-      name: isCanonicalSuperAdmin ? canonicalSuperAdminName : input.name,
-      image: input.profileImageUrl,
-      profileImageKey: input.profileImageKey,
-      role: isCanonicalSuperAdmin ? Role.SUPER_ADMIN : input.role,
-      linkedEmployeeId: input.linkedEmployeeId,
-    } as any,
-    select: userSelect,
+  if (isCanonicalSuperAdmin && input.password) {
+    return res.status(400).json({ error: "Use Change Password to update the Super admin password" });
+  }
+
+  if (nextRole === Role.DOCTOR && !(await isActivePsychiatristEmployee(nextLinkedEmployeeId))) {
+    return res.status(400).json({ error: "Doctor accounts must be linked to an active psychiatrist employee" });
+  }
+
+  const credentialAccount = input.password
+    ? await prisma.account.findFirst({ where: { userId: req.params.id, providerId: "credential" }, select: { id: true } })
+    : null;
+  if (input.password && !credentialAccount) {
+    return res.status(400).json({ error: "Password account not found" });
+  }
+  const passwordHash = input.password ? await hashPassword(input.password) : null;
+  const user = await prisma.$transaction(async (transaction) => {
+    const updatedUser = await transaction.user.update({
+      where: { id: req.params.id },
+      data: {
+        name: isCanonicalSuperAdmin ? canonicalSuperAdminName : input.name,
+        image: input.profileImageUrl,
+        profileImageKey: input.profileImageKey,
+        role: isCanonicalSuperAdmin ? Role.SUPER_ADMIN : input.role,
+        linkedEmployeeId: input.linkedEmployeeId,
+      } as any,
+      select: userSelect,
+    });
+    if (credentialAccount && passwordHash) {
+      await transaction.account.update({
+        where: { id: credentialAccount.id },
+        data: { password: passwordHash },
+      });
+      await transaction.session.deleteMany({
+        where: { userId: req.params.id },
+      });
+    }
+    return updatedUser;
   });
   res.json({ data: user });
 });

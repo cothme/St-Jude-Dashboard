@@ -59,7 +59,7 @@ export function Login() {
         <p>Secure access for patient care, payroll, staffing, and administrative records.</p>
         <form className="login-form" onSubmit={submit}>
           <FormInput label="Email" required type="email" value={email} disabled={isSubmitting} onChange={setEmail} autoComplete="email" />
-          <FormInput label="Password" required type="password" value={password} disabled={isSubmitting} onChange={setPassword} autoComplete="current-password" />
+          <FormInput label="Password" required type="password" revealable value={password} disabled={isSubmitting} onChange={setPassword} autoComplete="current-password" />
           {error && <p className="form-error">{error}</p>}
           <button className="primary-btn" disabled={isSubmitting}>{isSubmitting ? "Signing in..." : "Sign In"}</button>
         </form>

@@ -29,6 +29,20 @@ const authRateLimit = createRateLimiter({
 	max: 40,
 	message: "Too many authentication requests. Please try again later.",
 });
+const unsafeMethods = new Set(["DELETE", "PATCH", "POST", "PUT"]);
+const apiWriteRateLimit = createRateLimiter({
+	windowMs: 15 * 60 * 1000,
+	max: 300,
+	message: "Too many requests. Please slow down and try again later.",
+});
+
+morgan.token("safe-url", (req) => {
+	const url = (req as { originalUrl?: string; url?: string }).originalUrl ?? req.url ?? "";
+	return url.split("?")[0] || "/";
+});
+const requestLogFormat = config.isProduction
+	? ':remote-addr - :remote-user [:date[clf]] ":method :safe-url HTTP/:http-version" :status :res[content-length] ":referrer" ":user-agent"'
+	: ":method :safe-url :status :response-time ms - :res[content-length]";
 
 app.use(
 	cors({
@@ -60,12 +74,15 @@ app.use(helmet({
 		},
 	},
 }));
-app.use(morgan(config.isProduction ? "combined" : "dev"));
+app.use(morgan(requestLogFormat));
 
 if (config.isProduction) {
 	app.set("trust proxy", 1);
 }
 
+app.post("/api/auth/sign-up/email", (_req, res) => {
+	res.status(403).json({ error: "Public sign-up is disabled" });
+});
 app.all("/api/auth/*splat", authRateLimit, toNodeHandler(auth));
 app.use(
 	"/api/uploadthing",
@@ -78,6 +95,19 @@ app.use(
 );
 
 app.use(express.json({ limit: config.jsonLimit }));
+app.use("/api", (req, res, next) => {
+	if (!unsafeMethods.has(req.method)) return next();
+
+	const origin = req.headers.origin;
+	if (origin && config.clientOrigins.includes(origin)) return next();
+	if (!config.isProduction && !origin) return next();
+
+	return res.status(403).json({ error: "Invalid request origin" });
+});
+app.use("/api", (req, res, next) => {
+	if (!unsafeMethods.has(req.method)) return next();
+	return apiWriteRateLimit(req, res, next);
+});
 
 app.get("/api/health", (_req, res) => {
 	res.json({ ok: true });
@@ -110,7 +140,7 @@ const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
 
 	const status = typeof error.status === "number" ? error.status : 500;
 	if (status >= 500) {
-		console.error(error);
+		console.error(error instanceof Error ? { message: error.message, name: error.name } : error);
 	}
 	return res.status(status).json({ error: status === 500 ? "Internal server error" : error.message });
 };

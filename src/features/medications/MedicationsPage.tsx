@@ -29,9 +29,10 @@ export function MedicationsPage() {
   const signedInDoctor = currentUser.role === "Doctor"
     ? data.employees.find((employee) => employee.id === currentUser.linkedEmployeeId && employee.position === "Psychiatrist" && employee.status === "Active")
     : undefined;
-  const prescriptionPatients = currentUser.role === "Doctor"
+  const medicationPatientChoices = currentUser.role === "Doctor"
     ? (signedInDoctor ? data.patients.filter((patient) => patient.attendingDoctorId === signedInDoctor.id) : [])
     : data.patients;
+  const prescriptionPatients = medicationPatientChoices;
   const activeSchedules = data.medicationSchedules.filter((item) => item.status === "Active");
   const prescriptionTotalPages = Math.max(1, Math.ceil(data.prescriptions.length / prescriptionItemsPerPage));
   const visiblePrescriptions = data.prescriptions.slice(
@@ -49,6 +50,11 @@ export function MedicationsPage() {
   const saveSchedule = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!editing) return;
+    const selectedPatient = medicationPatientChoices.find((patient) => patient.id === editing.patientId);
+    if (!selectedPatient) {
+      showToast("Select a patient before saving the medication schedule", "error");
+      return;
+    }
     const scheduleToSave = {
       ...editing,
       frequency: normalizeMedicationFrequency(editing.frequency),
@@ -83,6 +89,36 @@ export function MedicationsPage() {
     logActivity({ action: "Recorded", entity: "Medication Administration", summary: `Recorded ${record.status.toLowerCase()} dose of ${record.medication} for ${patientName(data, record.patientId)}.`, details: medicationAdministrationLogDetails(record, data), severity: record.status === "Given" ? "success" : "warning" });
     showToast("Medication administration recorded", "success");
     setAdministering(null);
+  };
+
+  const startSchedule = (context?: { patientId: number }) => {
+    if (currentUser.role === "Doctor" && !signedInDoctor) {
+      showToast("Your account must be linked to an active psychiatrist profile before creating medication schedules", "error");
+      return;
+    }
+    if (!medicationPatientChoices.length) {
+      showToast(currentUser.role === "Doctor" ? "No patients are currently assigned to you" : "No patients are available", "error");
+      return;
+    }
+    const patient = context
+      ? medicationPatientChoices.find((item) => item.id === context.patientId)
+      : undefined;
+    if (context && !patient) {
+      showToast("The selected patient is not available for medication scheduling", "error");
+      return;
+    }
+    setEditing({
+      patientId: patient?.id ?? 0,
+      medication: "",
+      dosage: "",
+      route: "Oral",
+      frequency: "OD",
+      times: ["08:00"],
+      startDate: new Date().toISOString().slice(0, 10),
+      prescribedBy: patient ? doctorName(data, patient.attendingDoctorId) : "",
+      status: "Active",
+      instructions: "",
+    });
   };
 
   const startPrescription = (context?: { patientId: number; item?: PrescriptionItem }) => {
@@ -168,7 +204,7 @@ export function MedicationsPage() {
   };
 
   return (
-    <Page title="Medication Administration" action={<div className="actions prescription-page-actions"><button className="secondary-btn" onClick={() => startPrescription()}><FileSignature size={16} />Create Prescription</button><button className="primary-btn" onClick={() => setEditing({ patientId: data.patients[0]?.id ?? 1, medication: "", dosage: "", route: "Oral", frequency: "OD", times: ["08:00"], startDate: new Date().toISOString().slice(0, 10), prescribedBy: doctorName(data, data.patients[0]?.attendingDoctorId ?? 1), status: "Active", instructions: "" })}><Plus size={16} />Add Schedule</button></div>}>
+    <Page title="Medication Administration" action={<div className="actions prescription-page-actions"><button className="secondary-btn" onClick={() => startPrescription()}><FileSignature size={16} />Create Prescription</button><button className="primary-btn" onClick={() => startSchedule()}><Plus size={16} />Add Schedule</button></div>}>
       <section className="metric-grid">
         <Metric to="/medications" icon={<Syringe />} label="Active schedules" value={activeSchedules.length} note="Current medication orders" />
         <Metric to="/medications" icon={<ClipboardList />} label="Administrations" value={data.medicationAdministrations.length} note="Recorded medication events" />
@@ -198,7 +234,7 @@ export function MedicationsPage() {
           <PaginationControls page={prescriptionPage} totalPages={prescriptionTotalPages} totalItems={data.prescriptions.length} label="prescriptions" pageSize={prescriptionItemsPerPage} pageSizeOptions={[5, 10, 20]} onPageChange={setPrescriptionPage} onPageSizeChange={(size) => { setPrescriptionItemsPerPage(size); setPrescriptionPage(1); }} />
         </section>
       </div>
-      {editing && <Modal title={"id" in editing ? "Edit Medication Schedule" : "Add Medication Schedule"} onClose={() => setEditing(null)}><MedicationScheduleForm schedule={editing} patients={data.patients} onChange={setEditing} onSubmit={saveSchedule} onCancel={() => setEditing(null)} /></Modal>}
+      {editing && <Modal title={"id" in editing ? "Edit Medication Schedule" : "Add Medication Schedule"} onClose={() => setEditing(null)}><MedicationScheduleForm schedule={editing} patients={medicationPatientChoices} data={data} currentUser={currentUser} onChange={setEditing} onSubmit={saveSchedule} onCancel={() => setEditing(null)} /></Modal>}
       {creatingPrescription && <Modal title="Create Prescription" onClose={() => setCreatingPrescription(null)}><PrescriptionForm prescription={creatingPrescription} patients={prescriptionPatients} data={data} currentUser={currentUser} onChange={setCreatingPrescription} onSubmit={savePrescription} onCancel={() => setCreatingPrescription(null)} /></Modal>}
       {administering && <Modal title="Record Medication Administration" onClose={() => setAdministering(null)}><MedicationAdministrationForm schedule={administering} currentUser={currentUser} onSubmit={recordAdministration} onCancel={() => setAdministering(null)} /></Modal>}
       {viewingSchedule && <RecordDetailModal title={`${viewingSchedule.medication} Schedule`} onClose={() => setViewingSchedule(null)} items={[
@@ -429,10 +465,18 @@ function defaultPrescriptionPrescriber(data: AppData, currentUser: User, attendi
   return "";
 }
 
-function MedicationScheduleForm({ schedule, patients, onChange, onSubmit, onCancel }: { schedule: MedicationSchedule | Omit<MedicationSchedule, "id">; patients: Patient[]; onChange: (schedule: MedicationSchedule | Omit<MedicationSchedule, "id">) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onCancel: () => void }) {
+function MedicationScheduleForm({ schedule, patients, data, currentUser, onChange, onSubmit, onCancel }: { schedule: MedicationSchedule | Omit<MedicationSchedule, "id">; patients: Patient[]; data: AppData; currentUser: User; onChange: (schedule: MedicationSchedule | Omit<MedicationSchedule, "id">) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onCancel: () => void }) {
   const set = (patch: Partial<MedicationSchedule>) => onChange({ ...schedule, ...patch });
   const times = schedule.times.length ? schedule.times : [""];
   const frequencyValue = normalizeMedicationFrequency(schedule.frequency);
+  const selectedPatient = patients.find((patient) => patient.id === schedule.patientId);
+  const updatePatient = (patientId: number) => {
+    const patient = patients.find((item) => item.id === patientId);
+    set({
+      patientId: patient?.id ?? 0,
+      prescribedBy: patient ? defaultPrescriptionPrescriber(data, currentUser, patient.attendingDoctorId) : "",
+    });
+  };
   const updateFrequency = (frequency: string) => {
     const nextTimes = medicationFrequencies.includes(frequency as (typeof medicationFrequencies)[number])
       ? medicationFrequencyTimes[frequency as (typeof medicationFrequencies)[number]]
@@ -444,7 +488,10 @@ function MedicationScheduleForm({ schedule, patients, onChange, onSubmit, onCanc
   const removeTime = (index: number) => set({ times: times.filter((_, timeIndex) => timeIndex !== index).filter(Boolean) });
   return (
     <form className="form-grid" onSubmit={onSubmit}>
-      <FormSelect label="Patient" value={schedule.patientId} onChange={(value) => set({ patientId: Number(value) })}>{patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.firstName} {patient.lastName} - {patient.ward}</option>)}</FormSelect>
+      <FormSelect label="Patient" required value={selectedPatient ? schedule.patientId : ""} onChange={(value) => updatePatient(Number(value))}>
+        <option value="" disabled>Select a patient</option>
+        {patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.firstName} {patient.lastName} - {patient.ward}</option>)}
+      </FormSelect>
       <FormInput label="Medication" required value={schedule.medication} onChange={(value) => set({ medication: value })} />
       <FormInput label="Dosage" required value={schedule.dosage} onChange={(value) => set({ dosage: value })} />
       <FormSelect label="Route" value={schedule.route} onChange={(value) => set({ route: value })}><option>Oral</option><option>IM</option><option>IV</option><option>Topical</option><option>Sublingual</option></FormSelect>

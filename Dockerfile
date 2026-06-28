@@ -20,11 +20,18 @@ COPY backend .
 RUN npm run prisma:generate
 RUN npm run build
 
+FROM node:22-alpine AS backend-prod-deps
+WORKDIR /app/backend
+COPY backend/package*.json ./
+RUN npm ci --omit=dev
+
 FROM node:22-alpine AS runner
 WORKDIR /app/backend
 ENV NODE_ENV=production
 COPY --from=backend-build /app/backend/package*.json ./
-COPY --from=backend-build /app/backend/node_modules ./node_modules
+COPY --from=backend-prod-deps /app/backend/node_modules ./node_modules
+COPY --from=backend-build /app/backend/node_modules/.prisma ./node_modules/.prisma
+COPY --from=backend-build /app/backend/node_modules/@prisma/client ./node_modules/@prisma/client
 COPY --from=backend-build /app/backend/dist ./dist
 COPY --from=backend-build /app/backend/prisma ./prisma
 COPY --from=backend-build /app/backend/assets ./assets

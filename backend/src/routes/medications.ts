@@ -9,7 +9,7 @@ import { renderPrescription } from "../utils/prescription.js";
 
 const router = Router();
 const scheduleSchema = z.object({
-  patientId: z.number(),
+  patientId: z.number().int().positive(),
   medication: z.string().min(1),
   dosage: z.string().min(1),
   route: z.string().min(1),
