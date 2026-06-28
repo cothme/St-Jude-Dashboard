@@ -6,10 +6,10 @@ import { AuthedRequest, requireAuth, requireRole } from "../middleware/auth.js";
 
 const router = Router();
 const activityLogSchema = z.object({
-  action: z.string().min(1),
-  entity: z.string().min(1),
-  summary: z.string().min(1),
-  details: z.array(z.string()).optional(),
+  action: z.string().trim().min(1).max(80),
+  entity: z.string().trim().min(1).max(80),
+  summary: z.string().trim().min(1).max(240),
+  details: z.array(z.string().trim().max(240)).max(20).optional(),
   severity: z.enum(["info", "success", "warning", "danger"]).default("info"),
 });
 

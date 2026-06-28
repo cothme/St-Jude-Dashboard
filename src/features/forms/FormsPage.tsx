@@ -149,16 +149,10 @@ export function FormsPage() {
       fields,
     } as const;
     try {
-      const response = await fetch("http://localhost:3001/api/forms", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...submission, status: "SUBMITTED" }),
-      });
-      if (!response.ok) throw new Error("Failed to submit form");
+      await backendApi.createFormSubmission(submission);
       addFormSubmission(submission);
       await refreshData();
-      logActivity({ action: "Submitted", entity: "Form", summary: `Submitted ${selected.title}.`, details: [`Template: ${selected.title}`, `Category: ${selected.category}`, ...Object.entries(fields).map(([key, value]) => `${key}: ${value || "N/A"}`)], severity: "success" });
+      logActivity({ action: "Submitted", entity: "Form", summary: `Submitted ${selected.title}.`, details: [`Template: ${selected.title}`, `Category: ${selected.category}`], severity: "success" });
       showToast("Form submitted", "success");
       setFields({});
     } catch (err) {

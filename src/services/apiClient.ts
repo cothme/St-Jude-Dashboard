@@ -1,4 +1,4 @@
-import { ActivityLog, AppData, Appointment, CheckupRecord, Employee, MedicationAdministration, MedicationSchedule, MedicineLookupResult, Patient, PatientDischargeInput, PayrollRecord, Prescription, Role, User } from "../types";
+import { ActivityLog, AppData, Appointment, CareFormSubmission, CheckupRecord, Employee, MedicationAdministration, MedicationSchedule, MedicineLookupResult, Patient, PatientDischargeInput, PayrollRecord, Prescription, Role, User } from "../types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3001/api";
 
@@ -164,6 +164,7 @@ export const backendApi = {
   },
   deleteUser: (id: number | string) => apiFetch<void>(`/users/${id}`, { method: "DELETE" }),
   createActivityLog: (activity: Omit<ActivityLog, "id" | "actorId" | "actorName" | "actorRole" | "timestamp">) => apiFetch<{ data: any }>("/activity-logs", { method: "POST", body: JSON.stringify(activity) }),
+  createFormSubmission: (form: Omit<CareFormSubmission, "id" | "submittedAt" | "submittedBy">) => apiFetch<{ data: any }>("/forms", { method: "POST", body: JSON.stringify({ ...form, status: statusToApi(form.status) }) }),
   createMedicationSchedule: (schedule: Omit<MedicationSchedule, "id">) => apiFetch<{ data: any }>("/medications/schedules", { method: "POST", body: JSON.stringify(medicationScheduleToApi(schedule)) }),
   updateMedicationSchedule: (schedule: MedicationSchedule) => apiFetch<{ data: any }>(`/medications/schedules/${schedule.id}`, { method: "PUT", body: JSON.stringify(medicationScheduleToApi(schedule)) }),
   deleteMedicationSchedule: (id: number) => apiFetch<void>(`/medications/schedules/${id}`, { method: "DELETE" }),
@@ -194,8 +195,8 @@ function employeeFromApi(item: any): Employee {
     email: item.email ?? "",
     phone: item.phone ?? "",
     hireDate: item.hireDate?.slice(0, 10),
-    baseSalary: Number(item.baseSalary),
-    workDaysPerWeek: item.workDaysPerWeek,
+    baseSalary: Number(item.baseSalary ?? 0),
+    workDaysPerWeek: item.workDaysPerWeek ?? 5,
     status: item.status === "ACTIVE" ? "Active" : "Inactive",
   };
 }

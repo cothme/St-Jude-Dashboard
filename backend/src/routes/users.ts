@@ -38,6 +38,15 @@ const passwordSchema = z.object({
 });
 const userSelect = { id: true, name: true, email: true, image: true, profileImageKey: true, role: true, linkedEmployeeId: true, createdAt: true, updatedAt: true } as any;
 
+async function isActivePsychiatristEmployee(employeeId: number | null | undefined) {
+  if (!employeeId) return false;
+  const employee = await prisma.employee.findFirst({
+    where: { id: employeeId, position: "Psychiatrist", status: "ACTIVE" },
+    select: { id: true },
+  });
+  return Boolean(employee);
+}
+
 router.use(requireAuth);
 
 router.put("/me", async (req, res) => {
@@ -84,6 +93,9 @@ router.post("/", async (req, res) => {
   if (input.role === Role.SUPER_ADMIN) {
     return res.status(400).json({ error: `${canonicalSuperAdminName} is the only Super admin account` });
   }
+  if (input.role === Role.DOCTOR && !(await isActivePsychiatristEmployee(input.linkedEmployeeId))) {
+    return res.status(400).json({ error: "Doctor accounts must be linked to an active psychiatrist employee" });
+  }
   await auth.api.signUpEmail({
     body: {
       name: input.name,
@@ -110,9 +122,11 @@ router.put("/:id", async (req, res) => {
   const currentUser = (req as AuthedRequest).user;
   const existing = await prisma.user.findUniqueOrThrow({
     where: { id: req.params.id },
-    select: { id: true, email: true, role: true },
+    select: { id: true, email: true, role: true, linkedEmployeeId: true },
   });
   const isCanonicalSuperAdmin = existing.email === canonicalSuperAdminEmail;
+  const nextRole = isCanonicalSuperAdmin ? Role.SUPER_ADMIN : input.role ?? existing.role;
+  const nextLinkedEmployeeId = input.linkedEmployeeId === undefined ? existing.linkedEmployeeId : input.linkedEmployeeId;
 
   if (!isCanonicalSuperAdmin && input.role === Role.SUPER_ADMIN) {
     return res.status(400).json({ error: `${canonicalSuperAdminName} is the only Super admin account` });
@@ -128,6 +142,10 @@ router.put("/:id", async (req, res) => {
 
   if (isCanonicalSuperAdmin && input.password) {
     return res.status(400).json({ error: "Use Change Password to update the Super admin password" });
+  }
+
+  if (nextRole === Role.DOCTOR && !(await isActivePsychiatristEmployee(nextLinkedEmployeeId))) {
+    return res.status(400).json({ error: "Doctor accounts must be linked to an active psychiatrist employee" });
   }
 
   const credentialAccount = input.password

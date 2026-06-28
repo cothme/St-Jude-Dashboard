@@ -83,8 +83,23 @@ export const uploadManagementRouter = Router();
 
 uploadManagementRouter.use(requireAuth);
 uploadManagementRouter.delete("/files/:key", async (req: AuthedRequest, res) => {
-  const key = req.params.key;
+  const key = String(req.params.key ?? "");
   if (!key) return res.status(400).json({ error: "File key is required" });
+
+  const user = req.user;
+  if (!user) return res.status(401).json({ error: "Authentication required" });
+
+  if (user.role === Role.DOCTOR) {
+    const ownProfile = await prisma.user.findFirst({
+      where: { id: user.id, profileImageKey: key },
+      select: { id: true },
+    });
+    if (!ownProfile) {
+      return res.status(403).json({ error: "Insufficient permissions to delete this file" });
+    }
+  } else if (user.role !== Role.SUPER_ADMIN && user.role !== Role.STAFF) {
+    return res.status(403).json({ error: "Insufficient permissions" });
+  }
 
   const result = await utapi.deleteFiles(key);
   res.json({ data: result });

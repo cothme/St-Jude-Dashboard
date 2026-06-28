@@ -1,7 +1,7 @@
 import { Prisma, RecordStatus, Role, Sex } from "@prisma/client";
 import { Router } from "express";
 import { z } from "zod";
-import { requireAuth, requireRole } from "../middleware/auth.js";
+import { AuthedRequest, requireAuth, requireRole } from "../middleware/auth.js";
 import { prisma } from "../db.js";
 import { deleteUploadThingFile } from "../uploadthing.js";
 
@@ -42,7 +42,27 @@ async function generateEmployeeCode() {
 
 router.use(requireAuth);
 
-router.get("/", async (_req, res) => {
+router.get("/", async (req: AuthedRequest, res) => {
+  if (req.user?.role === Role.DOCTOR) {
+    const employees = await prisma.employee.findMany({
+      where: { position: "Psychiatrist", status: RecordStatus.ACTIVE },
+      select: {
+        id: true,
+        employeeCode: true,
+        firstName: true,
+        lastName: true,
+        profileImageUrl: true,
+        profileImageKey: true,
+        sex: true,
+        position: true,
+        department: true,
+        status: true,
+      },
+      orderBy: { id: "asc" },
+    });
+    return res.json({ data: employees });
+  }
+
   const employees = await prisma.employee.findMany({ orderBy: { id: "asc" } });
   res.json({ data: employees });
 });

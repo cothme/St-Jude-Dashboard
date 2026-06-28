@@ -10,6 +10,7 @@ Set these on the Railway service:
 - `BETTER_AUTH_SECRET`: a random 32+ character secret.
 - `BETTER_AUTH_URL`: your Railway public service URL, for example `https://your-app.up.railway.app`.
 - `CLIENT_ORIGIN`: the same Railway public service URL.
+- `SUPER_ADMIN_PASSWORD`: a strong initial Super admin password, at least 12 characters, required for first deploy or intentional password rotation.
 - `NODE_ENV`: `production`.
 - `PORT`: Railway usually injects this automatically. If needed, set `3001`.
 
@@ -40,10 +41,10 @@ After the first deploy, run this from your local backend folder with the Railway
 railway run npm run seed:super-admin
 ```
 
-Optional variables:
+To rotate or repair the Super admin credential account, rerun the seed command with a new strong password:
 
 ```bash
-railway run --set "SUPER_ADMIN_EMAIL=admin@stjude.local" --set "SUPER_ADMIN_NAME=Maria Santos" --set "SUPER_ADMIN_PASSWORD=Password123!" npm run seed:super-admin
+railway run --set "SUPER_ADMIN_EMAIL=admin@stjude.local" --set "SUPER_ADMIN_PASSWORD=<new-strong-password>" npm run seed:super-admin
 ```
 
-The script creates the user if missing. If the user already exists, it promotes and verifies the account without changing the password.
+The script creates the user if missing. If the user already exists, it promotes and verifies the account without changing the password unless `SUPER_ADMIN_PASSWORD` is explicitly provided.

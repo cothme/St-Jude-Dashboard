@@ -1406,6 +1406,65 @@ tbody tr {
   border-left-color: #b44b2f;
 }
 
+.doctor-link-warning-panel {
+  border-left: 5px solid #b58b1c;
+  display: grid;
+  gap: 14px;
+}
+
+.doctor-link-warning-panel > div:first-child {
+  align-items: flex-start;
+  display: flex;
+  gap: 12px;
+}
+
+.doctor-link-warning-panel svg,
+.doctor-link-warning {
+  color: #8b5e00;
+}
+
+.doctor-link-warning-list {
+  display: grid;
+  gap: 8px;
+}
+
+.doctor-link-warning-item {
+  background: color-mix(in srgb, #f7d973 18%, var(--surface));
+  border: 1px solid color-mix(in srgb, #b58b1c 42%, var(--line));
+  border-radius: 8px;
+  color: var(--text);
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  text-align: left;
+}
+
+.doctor-link-warning-item:hover {
+  border-color: #b58b1c;
+  box-shadow: inset 4px 0 0 #b58b1c;
+}
+
+.doctor-link-warning-item span {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.doctor-link-warning,
+.doctor-link-ok {
+  align-items: center;
+  display: inline-flex;
+  gap: 6px;
+  line-height: 1.35;
+}
+
+.doctor-link-warning {
+  font-weight: 800;
+}
+
+.doctor-link-ok {
+  color: var(--text-muted);
+}
+
 .activity-log-icon {
   align-items: center;
   background: color-mix(in srgb, var(--lime-100) 48%, var(--surface));
@@ -1886,6 +1945,8 @@ tbody tr {
   justify-content: space-between;
   line-height: 1.25;
   min-height: 15px;
+  min-width: 0;
+  overflow-wrap: anywhere;
   text-transform: uppercase;
   transition: color var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-standard);
 }
@@ -2484,10 +2545,10 @@ textarea[aria-invalid="true"] {
     align-items: start;
     border-bottom: 0;
     display: grid;
-    gap: 5px;
-    grid-template-columns: minmax(0, 1fr);
+    column-gap: 12px;
+    grid-template-columns: minmax(6.75rem, 0.38fr) minmax(0, 1fr);
     min-width: 0;
-    padding: 9px 4px;
+    padding: 10px 4px;
     text-align: left;
   }
 
@@ -2497,7 +2558,14 @@ textarea[aria-invalid="true"] {
     font-size: 11px;
     font-weight: 900;
     line-height: 1.2;
+    min-width: 0;
+    overflow-wrap: anywhere;
     text-transform: uppercase;
+  }
+
+  td > * {
+    grid-column: 2;
+    min-width: 0;
   }
 
   td.actions,
@@ -2507,24 +2575,33 @@ textarea[aria-invalid="true"] {
   }
 
   td.actions {
-    align-items: center;
-    display: flex;
-    flex-wrap: wrap;
+    align-items: stretch;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(42px, 1fr));
+  }
+
+  td.actions > * {
+    grid-column: auto;
   }
 
   td.actions::before,
   td:last-child:has(> .actions)::before {
-    flex: 0 0 100%;
     grid-column: 1 / -1;
     margin-bottom: 2px;
   }
 
   td.actions button {
+    justify-self: stretch;
     margin-left: 0;
+    width: 100%;
   }
 
   td:last-child > .actions {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(auto-fit, minmax(42px, 1fr));
     justify-content: flex-start;
+    width: 100%;
   }
 
   td.medication-schedule-actions {
@@ -2553,9 +2630,9 @@ textarea[aria-invalid="true"] {
   }
 
   .actions .icon-action {
-    flex: 0 0 42px;
+    flex: 1 1 42px;
     min-width: 42px;
-    width: 42px;
+    width: auto;
   }
 
   .page-header .actions,
@@ -2653,12 +2730,29 @@ textarea[aria-invalid="true"] {
     flex-direction: column;
   }
 
+  .pagination-bar > div,
+  .pagination-size,
+  .pagination-size select {
+    width: 100%;
+  }
+
+  .pagination-bar > div {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .checkup-history-header,
   .checkup-list-header,
   .payroll-history-header,
   .payroll-record-toolbar {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .payroll-history-header .secondary-btn,
+  .payroll-record-toolbar select,
+  .payroll-select-page {
+    width: 100%;
   }
 
   .checkup-list-header select {
@@ -2765,6 +2859,22 @@ textarea[aria-invalid="true"] {
 
   .page-header .primary-btn,
   .page-header .secondary-btn {
+    width: auto;
+  }
+
+  .page-header .actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  }
+
+  .page-header .actions button,
+  .page-header .actions .primary-btn,
+  .page-header .actions .secondary-btn {
+    width: 100%;
+  }
+
+  .page-header > .primary-btn,
+  .page-header > .secondary-btn {
     width: 100%;
   }
 
@@ -2784,6 +2894,16 @@ textarea[aria-invalid="true"] {
   .payroll-card-footer {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .payroll-card-footer .actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(44px, 1fr));
+    width: 100%;
+  }
+
+  .payroll-card-footer .actions .icon-action {
+    width: 100%;
   }
 
   .payroll-sort-buttons {

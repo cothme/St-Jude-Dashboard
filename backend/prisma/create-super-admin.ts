@@ -8,22 +8,26 @@ const prisma = new PrismaClient();
 
 const email = process.env.SUPER_ADMIN_EMAIL ?? "admin@stjude.local";
 const name = "Cecille Cosme";
-const password = process.env.SUPER_ADMIN_PASSWORD ?? "Password123!";
+const isProduction = process.env.NODE_ENV === "production";
+const configuredPassword = process.env.SUPER_ADMIN_PASSWORD;
+const password = configuredPassword ?? (isProduction ? undefined : "Password123!");
 
 async function main() {
-	if (password.length < 8) {
-		throw new Error("SUPER_ADMIN_PASSWORD must be at least 8 characters.");
-	}
-
 	const existing = await prisma.user.findUnique({ where: { email } });
-	const passwordHash = await hashPassword(password);
+	const needsPassword = !existing || Boolean(configuredPassword);
+	if (needsPassword && !password) {
+		throw new Error("SUPER_ADMIN_PASSWORD is required to create or rotate the Super admin password.");
+	}
+	if (password && password.length < 12) {
+		throw new Error("SUPER_ADMIN_PASSWORD must be at least 12 characters.");
+	}
 
 	if (!existing) {
 		await auth.api.signUpEmail({
 			body: {
 				name,
 				email,
-				password,
+				password: password!,
 			},
 		});
 	}
@@ -59,29 +63,33 @@ async function main() {
 			providerId: "credential",
 		},
 	});
+	const shouldSyncPassword = needsPassword || !credentialAccount;
+	if (shouldSyncPassword && !password) {
+		throw new Error("SUPER_ADMIN_PASSWORD is required to create or repair the Super admin credential account.");
+	}
 
-	if (credentialAccount) {
+	if (shouldSyncPassword && credentialAccount) {
 		await prisma.account.update({
 			where: { id: credentialAccount.id },
 			data: {
 				accountId: user.id,
-				password: passwordHash,
+				password: await hashPassword(password!),
 			},
 		});
-	} else {
+	} else if (shouldSyncPassword) {
 		await prisma.account.create({
 			data: {
 				id: randomUUID(),
 				userId: user.id,
 				accountId: user.id,
 				providerId: "credential",
-				password: passwordHash,
+				password: await hashPassword(password!),
 			},
 		});
 	}
 
 	console.log(`Super admin ready: ${user.email} (${user.role})`);
-	console.log("Super admin password synced from SUPER_ADMIN_PASSWORD.");
+	console.log(shouldSyncPassword ? "Super admin password synced from SUPER_ADMIN_PASSWORD." : "Super admin password unchanged.");
 	if (demoted.count > 0) {
 		console.log(`Demoted ${demoted.count} extra Super admin account(s).`);
 	}

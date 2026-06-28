@@ -124,6 +124,8 @@ UPLOADTHING_TOKEN=
 UPLOADTHING_CALLBACK_URL=
 ```
 
+`SUPER_ADMIN_PASSWORD` is required when the Super admin account is first created or when you intentionally rotate that credential. Production startup will not fall back to a default password.
+
 `UPLOADTHING_CALLBACK_URL` should point to the public backend route, for example:
 
 ```env
