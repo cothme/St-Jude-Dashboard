@@ -9,7 +9,7 @@ export const initialData: AppData = {
   employees: [
     { id: 1, employeeCode: "SJ-001", firstName: "Miguel", lastName: "Cruz", sex: "Male", position: "Psychiatrist", department: "Clinical", email: "mcruz@stjude.local", phone: "0917 222 0101", hireDate: "2022-01-10", baseSalary: 68000, workDaysPerWeek: 5, status: "Active" },
     { id: 2, employeeCode: "SJ-002", firstName: "Lena", lastName: "Dizon", sex: "Female", position: "Nurse", department: "Custodial Care", email: "ldizon@stjude.local", phone: "0917 222 0102", hireDate: "2021-09-18", baseSalary: 34000, workDaysPerWeek: 6, status: "Active" },
-    { id: 3, employeeCode: "SJ-003", firstName: "Ana", lastName: "Reyes", sex: "Female", position: "Care Staff", department: "Administration", email: "areyes@stjude.local", phone: "0917 222 0103", hireDate: "2023-04-03", baseSalary: 28000, workDaysPerWeek: 6, status: "Active" },
+    { id: 3, employeeCode: "SJ-003", firstName: "Ana", lastName: "Reyes", sex: "Female", position: "Nursing Attendant", department: "Administration", email: "areyes@stjude.local", phone: "0917 222 0103", hireDate: "2023-04-03", baseSalary: 28000, workDaysPerWeek: 6, status: "Active" },
     { id: 4, employeeCode: "SJ-004", firstName: "Paolo", lastName: "Garcia", sex: "Male", position: "Cook", department: "Operations", email: "pgarcia@stjude.local", phone: "0917 222 0104", hireDate: "2020-11-20", baseSalary: 24000, workDaysPerWeek: 6, status: "Active" },
   ],
   patients: [
