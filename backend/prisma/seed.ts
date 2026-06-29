@@ -57,13 +57,13 @@ async function main() {
 
   const staff = await prisma.employee.upsert({
     where: { employeeCode: "SJ-003" },
-    update: { sex: "FEMALE" },
+    update: { sex: "FEMALE", position: "Nursing Attendant" },
     create: {
       employeeCode: "SJ-003",
       firstName: "Ana",
       lastName: "Reyes",
       sex: "FEMALE",
-      position: "Care Staff",
+      position: "Nursing Attendant",
       department: "Administration",
       email: "areyes@stjude.local",
       phone: "0917 222 0103",
