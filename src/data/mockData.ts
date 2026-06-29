@@ -19,7 +19,7 @@ export const initialData: AppData = {
   ],
   checkups: [
     { id: 1, patientId: 1, doctorId: 1, checkupDate: "2026-05-11", chiefComplaint: "Sleep disturbance", symptoms: "Insomnia, restlessness", diagnosis: "Anxiety symptoms under monitoring", prescriptions: "Continue current medication", bloodPressure: "120/80", temperature: 98.2, heartRate: 74, weight: 67, height: 168, bmi: 23.74, notes: "Stable mood during interview.", nextAppointment: "2026-05-25" },
-    { id: 2, patientId: 2, doctorId: 1, checkupDate: "2026-05-15", chiefComplaint: "Low appetite", symptoms: "Fatigue, reduced intake", diagnosis: "Needs nutritional observation", prescriptions: "Meal monitoring and hydration", bloodPressure: "118/78", temperature: 98.6, heartRate: 80, weight: 54, height: 158, bmi: 21.63, notes: "Coordinate with care staff.", nextAppointment: "2026-05-22" },
+    { id: 2, patientId: 2, doctorId: 1, checkupDate: "2026-05-15", chiefComplaint: "Low appetite", symptoms: "Fatigue, reduced intake", diagnosis: "Needs nutritional observation", prescriptions: "Meal monitoring and hydration", bloodPressure: "118/78", temperature: 98.6, heartRate: 80, weight: 54, height: 158, bmi: 21.63, notes: "Coordinate with nursing attendant.", nextAppointment: "2026-05-22" },
   ],
   payrollRecords: [
     { id: 1, employeeId: 2, payPeriodStart: "2026-05-01", payPeriodEnd: "2026-05-15", daysWorked: 13, overtimeHours: 4, grossPay: 18307.69, sss: 650, philhealth: 420, pagibig: 200, tax: 980, otherDeductions: 0, totalDeductions: 2250, netPay: 16057.69 },

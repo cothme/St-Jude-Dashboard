@@ -812,9 +812,56 @@ td small,
   margin: 0 0 14px;
 }
 
+.section-heading {
+  align-items: flex-start;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  min-width: 0;
+}
+
+.section-heading h2,
+.section-heading .section-note {
+  margin: 0;
+}
+
 .stack {
   display: grid;
   gap: 10px;
+}
+
+.employee-summary-panel {
+  display: grid;
+  gap: 2px;
+}
+
+.employee-summary-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.employee-summary-card {
+  background: var(--surface-muted);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  min-height: 102px;
+  padding: 14px;
+}
+
+.employee-summary-card span {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.employee-summary-card strong {
+  font-size: 28px;
+  line-height: 1;
 }
 
 .list-card,
@@ -2715,6 +2762,7 @@ textarea[aria-invalid="true"] {
   .metric-grid,
   .payroll-overview-grid,
   .activity-overview-grid,
+  .employee-summary-grid,
   .form-grid,
   .role-grid,
   .deduction-toggle-grid {
@@ -2743,6 +2791,7 @@ textarea[aria-invalid="true"] {
 
   .checkup-history-header,
   .checkup-list-header,
+  .section-heading,
   .payroll-history-header,
   .payroll-record-toolbar {
     align-items: stretch;
@@ -2750,6 +2799,7 @@ textarea[aria-invalid="true"] {
   }
 
   .payroll-history-header .secondary-btn,
+  .section-heading .secondary-btn,
   .payroll-record-toolbar select,
   .payroll-select-page {
     width: 100%;

@@ -1,6 +1,7 @@
 import { MedicationAdministrationStatus, MedicationScheduleStatus, Role } from "@prisma/client";
 import { Response, Router } from "express";
 import { z } from "zod";
+import { config } from "../config.js";
 import { prisma } from "../db.js";
 import { AuthedRequest, requireAuth, requireRole } from "../middleware/auth.js";
 import { createRateLimiter } from "../middleware/rateLimit.js";
@@ -53,9 +54,11 @@ const medicineLookupSchema = z.object({
   q: z.string().trim().min(3).max(100),
 });
 const medicineLookupRateLimit = createRateLimiter({
-  windowMs: 60 * 1000,
-  max: 120,
+  name: "medicine-lookup",
+  windowMs: config.rateLimits.medicineLookup.windowMs,
+  max: config.rateLimits.medicineLookup.max,
   message: "Too many medicine lookup requests. Please wait a moment and try again.",
+  cleanupIntervalMs: config.rateLimits.cleanupIntervalMs,
 });
 
 function doctorPatientWhere(req: AuthedRequest) {

@@ -118,6 +118,15 @@ model Verification {
   updatedAt  DateTime? @updatedAt
 }
 
+model RateLimitBucket {
+  key       String   @id @db.VarChar(255)
+  count     Int      @default(0)
+  resetAt   DateTime
+  updatedAt DateTime @updatedAt
+
+  @@index([resetAt])
+}
+
 model Employee {
   id              Int             @id @default(autoincrement())
   employeeCode    String          @unique
