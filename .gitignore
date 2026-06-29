@@ -13,3 +13,4 @@ backend-start*.log
 backups/
 backend/backups/
 *.dump
+docs/
