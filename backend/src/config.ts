@@ -31,6 +31,9 @@ const apiWriteRateLimitMax = readPositiveNumber(process.env.API_WRITE_RATE_LIMIT
 const medicineLookupRateLimitWindowMs = readPositiveNumber(process.env.MEDICINE_LOOKUP_RATE_LIMIT_WINDOW_MS, 60 * 1000, 1000);
 const medicineLookupRateLimitMax = readPositiveNumber(process.env.MEDICINE_LOOKUP_RATE_LIMIT_MAX, 120, 1);
 const rateLimitCleanupIntervalMs = readPositiveNumber(process.env.RATE_LIMIT_CLEANUP_INTERVAL_MS, 5 * 60 * 1000, 1000);
+const activityLogRetentionDays = readPositiveNumber(process.env.ACTIVITY_LOG_RETENTION_DAYS, 180, 1);
+const activityLogMaxRows = readPositiveNumber(process.env.ACTIVITY_LOG_MAX_ROWS, 20000, 1000);
+const activityLogCleanupIntervalMs = readPositiveNumber(process.env.ACTIVITY_LOG_CLEANUP_INTERVAL_MS, 60 * 60 * 1000, 60 * 1000);
 const isWeakAuthSecret =
   authSecret === "replace-with-a-long-random-secret" ||
   authSecret === "development-only-change-before-production" ||
@@ -77,5 +80,10 @@ export const config = {
       windowMs: medicineLookupRateLimitWindowMs,
       max: medicineLookupRateLimitMax,
     },
+  },
+  activityLogs: {
+    retentionDays: activityLogRetentionDays,
+    maxRows: activityLogMaxRows,
+    cleanupIntervalMs: activityLogCleanupIntervalMs,
   },
 };
