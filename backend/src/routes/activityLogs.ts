@@ -1,6 +1,7 @@
 import { Role } from "@prisma/client";
 import { Router } from "express";
 import { z } from "zod";
+import { config } from "../config.js";
 import { prisma } from "../db.js";
 import { AuthedRequest, requireAuth, requireRole } from "../middleware/auth.js";
 
@@ -12,6 +13,35 @@ const activityLogSchema = z.object({
   details: z.array(z.string().trim().max(240)).max(20).optional(),
   severity: z.enum(["info", "success", "warning", "danger"]).default("info"),
 });
+
+let lastCleanupAt = 0;
+
+async function enforceActivityLogRetention() {
+  const now = Date.now();
+  if (now - lastCleanupAt < config.activityLogs.cleanupIntervalMs) return;
+  lastCleanupAt = now;
+
+  const cutoff = new Date(now - config.activityLogs.retentionDays * 24 * 60 * 60 * 1000);
+  await prisma.activityLog.deleteMany({
+    where: { timestamp: { lt: cutoff } },
+  });
+
+  const totalLogs = await prisma.activityLog.count();
+  const excessLogs = totalLogs - config.activityLogs.maxRows;
+  if (excessLogs <= 0) return;
+
+  const oldestLogs = await prisma.activityLog.findMany({
+    orderBy: [{ timestamp: "asc" }, { id: "asc" }],
+    take: excessLogs,
+    select: { id: true },
+  });
+
+  if (oldestLogs.length > 0) {
+    await prisma.activityLog.deleteMany({
+      where: { id: { in: oldestLogs.map((log) => log.id) } },
+    });
+  }
+}
 
 router.use(requireAuth);
 
@@ -34,6 +64,9 @@ router.post("/", async (req, res) => {
       actorName: actor?.name ?? "Unknown user",
       actorRole: actor?.role ?? Role.STAFF,
     },
+  });
+  void enforceActivityLogRetention().catch((error) => {
+    console.error("Failed to enforce activity log retention", error);
   });
   res.status(201).json({ data: log });
 });

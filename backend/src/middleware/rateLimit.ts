@@ -1,39 +1,73 @@
 import { RequestHandler } from "express";
+import { createHash } from "node:crypto";
+import { prisma } from "../db.js";
 
 type RateLimitOptions = {
+  name?: string;
   windowMs: number;
   max: number;
   message?: string;
+  cleanupIntervalMs?: number;
 };
 
-type Bucket = {
+type RateLimitBucket = {
   count: number;
-  resetAt: number;
+  resetAt: Date;
 };
 
-export function createRateLimiter({ windowMs, max, message = "Too many requests" }: RateLimitOptions): RequestHandler {
-  const buckets = new Map<string, Bucket>();
+function bucketKey(name: string, req: Parameters<RequestHandler>[0]) {
+  const rawKey = `${name}:${req.ip}:${req.method}:${req.path}`;
+  return `${name}:${createHash("sha256").update(rawKey).digest("hex")}`;
+}
 
-  return (req, res, next) => {
-    const now = Date.now();
-    const key = `${req.ip}:${req.method}:${req.path}`;
-    const existing = buckets.get(key);
-    const bucket = existing && existing.resetAt > now ? existing : { count: 0, resetAt: now + windowMs };
+export function createRateLimiter({
+  name = "default",
+  windowMs,
+  max,
+  message = "Too many requests",
+  cleanupIntervalMs = 5 * 60 * 1000,
+}: RateLimitOptions): RequestHandler {
+  let lastCleanupAt = 0;
 
-    bucket.count += 1;
-    buckets.set(key, bucket);
+  return async (req, res, next) => {
+    const nowMs = Date.now();
+    const now = new Date(nowMs);
+    const resetAt = new Date(nowMs + windowMs);
+    const key = bucketKey(name, req);
 
-    if (bucket.count > max) {
-      res.setHeader("Retry-After", Math.ceil((bucket.resetAt - now) / 1000));
-      return res.status(429).json({ error: message });
-    }
+    try {
+      const [bucket] = await prisma.$queryRaw<RateLimitBucket[]>`
+        INSERT INTO "RateLimitBucket" ("key", "count", "resetAt", "updatedAt")
+        VALUES (${key}, 1, ${resetAt}, ${now})
+        ON CONFLICT ("key") DO UPDATE SET
+          "count" = CASE
+            WHEN "RateLimitBucket"."resetAt" <= ${now} THEN 1
+            ELSE "RateLimitBucket"."count" + 1
+          END,
+          "resetAt" = CASE
+            WHEN "RateLimitBucket"."resetAt" <= ${now} THEN ${resetAt}
+            ELSE "RateLimitBucket"."resetAt"
+          END,
+          "updatedAt" = ${now}
+        RETURNING "count", "resetAt"
+      `;
 
-    if (buckets.size > 1000) {
-      for (const [bucketKey, value] of buckets) {
-        if (value.resetAt <= now) buckets.delete(bucketKey);
+      if (bucket.count > max) {
+        res.setHeader("Retry-After", Math.ceil((bucket.resetAt.getTime() - nowMs) / 1000));
+        return res.status(429).json({ error: message });
       }
-    }
 
-    return next();
+      if (nowMs - lastCleanupAt >= cleanupIntervalMs) {
+        lastCleanupAt = nowMs;
+        void prisma.$executeRaw`DELETE FROM "RateLimitBucket" WHERE "resetAt" <= ${now}`
+          .catch((error) => {
+            console.warn("Failed to clean up expired rate limit buckets", error);
+          });
+      }
+
+      return next();
+    } catch (error) {
+      return next(error);
+    }
   };
 }

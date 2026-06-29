@@ -126,6 +126,7 @@ export function Employees() {
 	} = useApp();
 	const [editing, setEditing] = useState<Employee | EmployeeDraft | null>(null);
 	const [error, setError] = useState("");
+	const [deleteError, setDeleteError] = useState("");
 	const [isSaving, setIsSaving] = useState(false);
 	const [deletingId, setDeletingId] = useState<number | null>(null);
 	const [viewing, setViewing] = useState<Employee | null>(null);
@@ -194,6 +195,7 @@ export function Employees() {
 				severity: "success",
 			});
 			showToast("Employee record saved", "success");
+			setDeleteError("");
 			setEditing(null);
 		} catch (err) {
 			const message =
@@ -212,6 +214,7 @@ export function Employees() {
 			)
 		)
 			return;
+		setDeleteError("");
 		setDeletingId(employee.id);
 		try {
 			await backendApi.deleteEmployee(employee.id);
@@ -225,11 +228,12 @@ export function Employees() {
 				severity: "danger",
 			});
 			showToast("Employee record deleted", "success");
+			setDeleteError("");
 		} catch (err) {
-			showToast(
-				err instanceof Error ? err.message : "Failed to delete employee",
-				"error",
-			);
+			const message =
+				err instanceof Error ? err.message : "Failed to delete employee";
+			setDeleteError(message);
+			showToast(message, "error");
 		} finally {
 			setDeletingId(null);
 		}
@@ -267,6 +271,7 @@ export function Employees() {
 					onChange={setQuery}
 					placeholder="Search employees..."
 				/>
+				{deleteError && <p className="form-error">{deleteError}</p>}
 				<div className="table-wrap">
 					<table>
 						<thead>

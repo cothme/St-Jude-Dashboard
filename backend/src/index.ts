@@ -25,15 +25,19 @@ import { uploadManagementRouter, uploadRouter } from "./uploadthing.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const authRateLimit = createRateLimiter({
-	windowMs: 15 * 60 * 1000,
-	max: 40,
+	name: "auth",
+	windowMs: config.rateLimits.auth.windowMs,
+	max: config.rateLimits.auth.max,
 	message: "Too many authentication requests. Please try again later.",
+	cleanupIntervalMs: config.rateLimits.cleanupIntervalMs,
 });
 const unsafeMethods = new Set(["DELETE", "PATCH", "POST", "PUT"]);
 const apiWriteRateLimit = createRateLimiter({
-	windowMs: 15 * 60 * 1000,
-	max: 300,
+	name: "api-write",
+	windowMs: config.rateLimits.apiWrite.windowMs,
+	max: config.rateLimits.apiWrite.max,
 	message: "Too many requests. Please slow down and try again later.",
+	cleanupIntervalMs: config.rateLimits.cleanupIntervalMs,
 });
 
 morgan.token("safe-url", (req) => {

@@ -31,6 +31,23 @@ const employeeUpdateSchema = employeeFieldsSchema.extend({
   employeeCode: z.string().min(1),
 });
 
+function psychiatristDeleteBlockMessage(linkedDoctorUsers: number, assignedPatients: number) {
+  const blockers = [
+    linkedDoctorUsers > 0
+      ? `${linkedDoctorUsers} doctor ${linkedDoctorUsers === 1 ? "account is" : "accounts are"} linked to this employee`
+      : "",
+    assignedPatients > 0
+      ? `${assignedPatients} ${assignedPatients === 1 ? "patient has" : "patients have"} this employee as attending doctor`
+      : "",
+  ].filter(Boolean);
+  const actions = [
+    linkedDoctorUsers > 0 ? "unlink or reassign the doctor account" : "",
+    assignedPatients > 0 ? "reassign assigned patients" : "",
+  ].filter(Boolean);
+
+  return `Cannot delete this psychiatrist because ${blockers.join(" and ")}. Please ${actions.join(" and ")} before deleting this employee.`;
+}
+
 async function generateEmployeeCode() {
   const employees = await prisma.employee.findMany({ select: { employeeCode: true } });
   const nextNumber = employees.reduce((max, employee) => {
@@ -96,11 +113,26 @@ router.put("/:id", requireRole(Role.SUPER_ADMIN, Role.STAFF), async (req, res) =
 });
 
 router.delete("/:id", requireRole(Role.SUPER_ADMIN, Role.STAFF), async (req, res) => {
+  const employeeId = Number(req.params.id);
   const employee = await prisma.employee.findUniqueOrThrow({
-    where: { id: Number(req.params.id) },
-    select: { profileImageKey: true },
+    where: { id: employeeId },
+    select: { profileImageKey: true, position: true },
   });
-  await prisma.employee.delete({ where: { id: Number(req.params.id) } });
+
+  if (employee.position === "Psychiatrist") {
+    const [linkedDoctorUsers, assignedPatients] = await Promise.all([
+      prisma.user.count({ where: { role: Role.DOCTOR, linkedEmployeeId: employeeId } }),
+      prisma.patient.count({ where: { attendingDoctorId: employeeId } }),
+    ]);
+
+    if (linkedDoctorUsers > 0 || assignedPatients > 0) {
+      return res.status(409).json({
+        error: psychiatristDeleteBlockMessage(linkedDoctorUsers, assignedPatients),
+      });
+    }
+  }
+
+  await prisma.employee.delete({ where: { id: employeeId } });
   await deleteUploadThingFile(employee.profileImageKey);
   res.status(204).send();
 });
