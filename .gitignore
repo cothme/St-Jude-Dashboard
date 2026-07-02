@@ -14,3 +14,5 @@ backups/
 backend/backups/
 *.dump
 docs/
+coverage/
+backend/coverage/
