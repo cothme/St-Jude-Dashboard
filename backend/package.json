@@ -5,9 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
+    "prebuild": "prisma generate",
     "build": "tsc",
     "start": "node dist/src/index.js",
     "start:prod": "npx prisma migrate deploy && node dist/prisma/create-super-admin.js && node dist/src/index.js",
+    "pretest": "prisma generate",
     "test": "vitest run --configLoader runner",
     "test:watch": "vitest --configLoader runner",
     "test:coverage": "vitest run --configLoader runner --coverage",
