@@ -70,13 +70,6 @@ export function Layout() {
             </div>
           ))}
         </nav>
-        <div className="sidebar-user">
-          <small>Signed in as</small>
-          <Avatar name={currentUser.name} src={currentUser.profileImageUrl} size="lg" />
-          <strong>{currentUser.name}</strong>
-          <span className="sidebar-role">{currentUser.role}</span>
-          <Link className="logout-link" to="/login" onClick={() => void signOut()}><LogOut size={16} /> Logout</Link>
-        </div>
       </aside>
       <div className="content-shell">
         <header className="topbar">
@@ -99,6 +92,7 @@ export function Layout() {
               <span>{theme === "light" ? "Dark" : "Light"}</span>
             </button>
             <div className="role-pill">{currentUser.role}</div>
+            <Link className="topbar-logout-btn" to="/login" aria-label="Logout" title="Logout" onClick={() => void signOut()}><LogOut size={17} /></Link>
           </div>
         </header>
         <main><Outlet /></main>

@@ -48,15 +48,15 @@ export function Dashboard() {
   const canViewEmployees = currentUser.role !== "Doctor";
 
   return (
-    <Page title="Operations Overview" action={<Link className="primary-btn" to="/patients">Open Patients</Link>}>
+    <Page title="Operations Overview" action={<Link className="primary-btn" to="/patients"><Users size={16} />Open Patients</Link>}>
       <div className="metric-grid">
-        <Metric to="/patients" icon={<Users />} label={currentUser.role === "Doctor" ? "Assigned patients" : "Current census"} value={activePatients} note={`${dashboardPatients.length} relevant patient records`} />
-        <Metric to="/appointments" icon={<CalendarClock />} label="Upcoming appointments" value={upcomingAppointments.length} note="Scheduled visits ahead" />
-        <Metric to="/medications" icon={<Syringe />} label="Active medications" value={upcomingMedications.length} note="Current medication schedules" />
-        {currentUser.role === "Doctor" && <Metric to="/patients" icon={<Activity />} label="Observation" value={observationPatients} note="Patients needing closer review" />}
-        {currentUser.role === "Doctor" && <Metric to="/patients" icon={<ClipboardPlus />} label="Admitted" value={admittedPatients} note="Currently admitted assignments" />}
-        {canViewEmployees && <Metric to="/employees" icon={<UserRoundCog />} label="Active employees" value={activeEmployees} note="Available staff records" />}
-        {canViewPayroll && <Metric to="/payroll" icon={<Banknote />} label="Net payroll" value={formatCurrency(payrollTotal)} note="Saved demo records" />}
+        <Metric to="/patients" icon={<Users />} label={currentUser.role === "Doctor" ? "Assigned patients" : "Current census"} value={activePatients} note={`${dashboardPatients.length} records`} />
+        <Metric to="/appointments" icon={<CalendarClock />} label="Appointments" value={upcomingAppointments.length} />
+        <Metric to="/medications" icon={<Syringe />} label="Medications" value={upcomingMedications.length} />
+        {currentUser.role === "Doctor" && <Metric to="/patients" icon={<Activity />} label="Observation" value={observationPatients} />}
+        {currentUser.role === "Doctor" && <Metric to="/patients" icon={<ClipboardPlus />} label="Admitted" value={admittedPatients} />}
+        {canViewEmployees && <Metric to="/employees" icon={<UserRoundCog />} label="Employees" value={activeEmployees} />}
+        {canViewPayroll && <Metric to="/payroll" icon={<Banknote />} label="Net payroll" value={formatCurrency(payrollTotal)} />}
       </div>
 
       {canViewEmployees && (
@@ -64,7 +64,6 @@ export function Dashboard() {
           <div className="section-heading">
             <div>
               <h2>Employee Summary</h2>
-              <p className="section-note">Active employees grouped by position.</p>
             </div>
             <Link className="secondary-btn" to="/employees">View Employees</Link>
           </div>

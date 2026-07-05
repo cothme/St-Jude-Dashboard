@@ -159,7 +159,7 @@ export function Patients() {
   };
 
   return (
-    <Page title="Patient Management" action={canManage && <button className="primary-btn" onClick={() => setEditing(emptyPatient(doctors[0]?.id ?? 1))}>Add Patient</button>}>
+    <Page title="Patient Management" action={canManage && <button className="primary-btn" onClick={() => setEditing(emptyPatient(doctors[0]?.id ?? 1))}><Plus size={16} />Add Patient</button>}>
       <div className="split-layout">
         <section className="panel">
           <SearchBox value={query} onChange={setQuery} placeholder="Search name, ward, status..." />

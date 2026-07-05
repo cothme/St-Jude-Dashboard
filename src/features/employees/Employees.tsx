@@ -261,6 +261,7 @@ export function Employees() {
 						})
 					}
 				>
+					<Plus size={16} />
 					Add Employee
 				</button>
 			}

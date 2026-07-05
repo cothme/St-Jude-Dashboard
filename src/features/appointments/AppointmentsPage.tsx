@@ -120,7 +120,7 @@ export function AppointmentsPage() {
   };
 
   return (
-    <Page title="Appointment Calendar" action={canManageAppointments && <button className="primary-btn" onClick={() => setEditing(newAppointment())}>Add Appointment</button>}>
+    <Page title="Appointment Calendar" action={canManageAppointments && <button className="primary-btn" onClick={() => setEditing(newAppointment())}><CalendarClock size={16} />Add Appointment</button>}>
       <section className="metric-grid">
         <Metric to="/appointments" icon={<CalendarClock />} label="Today" value={data.appointments.filter((item) => item.startsAt.slice(0, 10) === today).length} note="Appointments scheduled today" />
         <Metric to={doctorsMetricTarget} icon={<Users />} label="Doctors" value={doctors.length} note="Available psychiatrists" />
