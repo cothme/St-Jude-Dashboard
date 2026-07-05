@@ -1,11 +1,11 @@
 import { FormEvent, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes, useEffect, useId, useMemo, useState } from "react";
-import { Activity, ArrowUpDown, Banknote, CalendarClock, ClipboardPlus, ClipboardList, FileText, Home, LogOut, Menu, Moon, Plus, Search, Shield, Syringe, Sun, Trash2, Users, UserRoundCog, X } from "lucide-react";
+import { Activity, ArrowUpDown, Banknote, CalendarClock, ClipboardPlus, ClipboardList, Eye, FileText, Home, LogOut, Menu, Moon, Pencil, Plus, Search, Shield, Syringe, Sun, Trash2, Users, UserRoundCog, X } from "lucide-react";
 import { ActivityLog, AppData, Appointment, CareFormSubmission, CheckupRecord, Employee, FormCategory, MedicationAdministration, MedicationSchedule, Patient, PatientDischargeInput, PayrollRecord, Role, User } from "../../types";
 import { ageFromBirthDate, calculateBmi, formatCurrency, formatDate, nextId } from "../../utils";
 import { Link } from "react-router-dom";
 import { useApp } from "../../app/AppProvider";
 import { backendApi, backendAuth } from "../../services/apiClient";
-import { Badge, CurrencyInput, FormInput, FormSelect, FormTextarea, Metric, Modal, Page, PaginationControls, ProfilePhotoField, SearchBox, Avatar, optionalNumber } from "../../shared/ui";
+import { ActionIconButton, Badge, CurrencyInput, FormInput, FormSelect, FormTextarea, Metric, Modal, Page, PaginationControls, ProfilePhotoField, SearchBox, Avatar, optionalNumber } from "../../shared/ui";
 import { nextSort, SortableHeader, sortItems, type SortState } from "../../shared/sorting";
 import { deleteReplacedProfilePhoto, discardDraftProfilePhoto } from "../../shared/profilePhotos";
 import { appointmentLogDetails, checkupLogDetails, employeeLogDetails, medicationAdministrationLogDetails, medicationScheduleLogDetails, patientDischargeLogDetails, patientLogDetails, payrollLogDetails, userLogDetails } from "../../shared/activityLogDetails";
@@ -118,7 +118,7 @@ export function Checkups() {
   };
 
   return (
-    <Page title={currentUser.role === "Doctor" ? "Conduct Checkups" : "Checkup Records"} action={<Link className="primary-btn" to="/appointments">Schedule Appointment</Link>}>
+    <Page title={currentUser.role === "Doctor" ? "Conduct Checkups" : "Checkup Records"} action={<Link className="primary-btn" to="/appointments"><CalendarClock size={16} />Schedule Appointment</Link>}>
       {currentUser.role === "Doctor" && doctorEmployee && (
         <DoctorCheckupWorkspace
           doctor={doctorEmployee}
@@ -138,7 +138,7 @@ export function Checkups() {
           </div>
         </div>
         <div className="record-grid">
-          {checkupPageRecords.map((checkup) => <article className="record-card clickable-card" role="button" tabIndex={0} key={checkup.id} onClick={() => setViewing(checkup)} onKeyDown={(event) => { if (event.target !== event.currentTarget) return; if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setViewing(checkup); } }}><CheckupSummary checkup={checkup} /><p>{checkup.diagnosis || "No diagnosis entered"}</p><div className="actions"><button onClick={(event) => { event.stopPropagation(); setViewing(checkup); }}>View</button><button onClick={(event) => { event.stopPropagation(); setEditing(checkup); }}>Edit</button>{currentUser.role !== "Doctor" && <button className="danger" disabled={deletingId === checkup.id} onClick={(event) => { event.stopPropagation(); removeCheckup(checkup); }}>{deletingId === checkup.id ? "Deleting..." : "Delete"}</button>}</div></article>)}
+          {checkupPageRecords.map((checkup) => <article className="record-card clickable-card" role="button" tabIndex={0} key={checkup.id} onClick={() => setViewing(checkup)} onKeyDown={(event) => { if (event.target !== event.currentTarget) return; if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setViewing(checkup); } }}><CheckupSummary checkup={checkup} /><p>{checkup.diagnosis || "No diagnosis entered"}</p><div className="actions"><ActionIconButton label={`View checkup for ${patientName(data, checkup.patientId)}`} icon={<Eye size={16} />} onClick={(event) => { event.stopPropagation(); setViewing(checkup); }}>View</ActionIconButton><ActionIconButton label={`Edit checkup for ${patientName(data, checkup.patientId)}`} icon={<Pencil size={16} />} onClick={(event) => { event.stopPropagation(); setEditing(checkup); }}>Edit</ActionIconButton>{currentUser.role !== "Doctor" && <ActionIconButton variant="danger" label={`Delete checkup for ${patientName(data, checkup.patientId)}`} icon={<Trash2 size={16} />} disabled={deletingId === checkup.id} onClick={(event) => { event.stopPropagation(); removeCheckup(checkup); }}>{deletingId === checkup.id ? "Deleting" : "Delete"}</ActionIconButton>}</div></article>)}
         </div>
         {records.length > 0 ? (
           <PaginationControls page={checkupPage} totalPages={checkupTotalPages} totalItems={records.length} label="checkups" pageSize={checkupItemsPerPage} pageSizeOptions={[6, 12, 24]} onPageChange={setCheckupPage} onPageSizeChange={(size) => { setCheckupItemsPerPage(size); setCheckupPage(1); }} />

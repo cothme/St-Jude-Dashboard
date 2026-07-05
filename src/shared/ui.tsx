@@ -178,14 +178,14 @@ export function ActionIconButton({ label, icon, variant = "default", className =
   );
 }
 
-export function Metric({ icon, label, value, note, to }: { icon: ReactNode; label: string; value: ReactNode; note: string; to?: string }) {
-  const content = <><div>{icon}</div><span>{label}</span><strong>{value}</strong><small>{note}</small></>;
-  if (to) return <Link className="metric-card metric-card-action" to={to} aria-label={`${label}: ${value}. ${note}`}>{content}</Link>;
+export function Metric({ icon, label, value, note, to }: { icon: ReactNode; label: string; value: ReactNode; note?: string; to?: string }) {
+  const content = <><div>{icon}</div><span>{label}</span><strong>{value}</strong>{note && <small>{note}</small>}</>;
+  if (to) return <Link className="metric-card metric-card-action" to={to} aria-label={note ? `${label}: ${value}. ${note}` : `${label}: ${value}`}>{content}</Link>;
   return <section className="metric-card">{content}</section>;
 }
 
 export function Page({ title, children, action }: { title: string; children: ReactNode; action?: ReactNode }) {
-  return <div className="page"><div className="page-header"><div><span className="eyebrow">St. Jude Management System</span><h2>{title}</h2></div>{action}</div>{children}</div>;
+  return <div className="page"><div className="page-header"><div><h2>{title}</h2></div>{action}</div>{children}</div>;
 }
 
 export function SearchBox({ value, onChange, placeholder }: { value: string; onChange: (value: string) => void; placeholder: string }) {

@@ -140,7 +140,7 @@ export function UsersPage() {
   };
 
   return (
-    <Page title="Users and Roles" action={<button className="primary-btn" onClick={() => setEditing({ name: "", email: "", profileImageUrl: "", role: "Staff", status: "Active", password: "", confirmPassword: "" })}>Add User</button>}>
+    <Page title="Users and Roles" action={<button className="primary-btn" onClick={() => setEditing({ name: "", email: "", profileImageUrl: "", role: "Staff", status: "Active", password: "", confirmPassword: "" })}><Plus size={16} />Add User</button>}>
       {doctorMappingWarnings.length > 0 && (
         <section className="panel doctor-link-warning-panel" aria-label="Doctor account mapping warnings">
           <div>
